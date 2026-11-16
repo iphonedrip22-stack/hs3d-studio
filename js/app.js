@@ -630,7 +630,9 @@ function delta(pts){
   const d=fim.followers-ini.followers; if(!d) return `<span class="delta">= sem mudança</span>`;
   return `<span class="delta ${d>0?"up":"down"}">${d>0?"▲ +":"▼ "}${fmtN(d)}</span>`;
 }
-function fonte(n){ return n?`<span class="fonte ${n.source}">${n.source==="auto"?"automático":"manual"} · ${esc(fmtData(n.captured_at))}</span>`:""; }
+const FONTE={auto:"automático",manual:"manual",agente:"agente"};
+const nomeFonte=s=>FONTE[s]||"manual";
+function fonte(n){ return n?`<span class="fonte ${esc(n.source)}"${n.source==="agente"?` title="Coletado pelo agente de postagem no portal do próprio canal (só leitura)"`:""}>${nomeFonte(n.source)} · ${esc(fmtData(n.captured_at))}</span>`:""; }
 function renderNumeros(animar){
   const cs=canaisNumeros(); if(!cs.has(numCanal)) numCanal=cs.keys().next().value;
   $("#numCanais").innerHTML=[...cs].map(([k,n])=>`<button type="button" data-ncanal="${esc(k)}" aria-pressed="${k===numCanal}">${esc(n)}</button>`).join("");
@@ -676,11 +678,11 @@ function renderNumeros(animar){
     const link=n.platform==="youtube"&&n.video_ref&&!/^https?:/.test(n.video_ref)?"https://youtube.com/shorts/"+n.video_ref:(/^https?:/.test(n.video_ref||"")?n.video_ref:null);
     return `<li><span class="pl-chip ${n.platform}">${PLAT[n.platform]}</span>
       <span class="vt">${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(n.video_title||n.video_ref)}</a>`:esc(n.video_title||n.video_ref)}</span>
-      <span class="vv"><b>${fmtN(n.views)}</b> views${n.likes!=null?` · ${fmtN(n.likes)} curt.`:""}</span>
+      <span class="vv"><b>${fmtN(n.views)}</b> views${n.likes!=null?` · ${fmtN(n.likes)} curt.`:""}${n.comments!=null?` · ${fmtN(n.comments)} coment.`:""}${n.shares!=null?` · ${fmtN(n.shares)} compart.`:""}${n.saves!=null?` · ${fmtN(n.saves)} salv.`:""}</span>
       <span class="barra"><i style="--p:${((n.views||0)/mx).toFixed(3)}"></i></span>
-      <small>${n.source==="auto"?"automático":"manual"} · ${esc(fmtData(n.captured_at))}</small></li>`;}).join(""):"<li class='nota'>Sem números de vídeos ainda.</li>";
+      <small class="${n.source==="agente"?"fonte agente":""}">${nomeFonte(n.source)} · ${esc(fmtData(n.captured_at))}</small></li>`;}).join(""):"<li class='nota'>Sem números de vídeos ainda.</li>";
   if(animar){ stagger($("#numVideos")); requestAnimationFrame(()=>$("#numVideos").classList.add("vivo")); }
-  $("#numVidNota").textContent="Views mais recentes de cada vídeo deste canal. YouTube vem sozinho; Instagram e TikTok por vídeo você informa à mão.";
+  $("#numVidNota").textContent="Views mais recentes de cada vídeo deste canal. YouTube vem sozinho; Instagram e TikTok chegam pela coleta dos agentes (todo dia às 9h) ou você informa à mão.";
   // formulários de baixo
   $("#nvPlat").innerHTML=[...new Set(cards.map(c=>c.platform))].map(p=>`<option value="${p}">${PLAT[p]}</option>`).join("")||Object.entries(PLAT).map(([k,n])=>`<option value="${k}">${n}</option>`).join("");
   $("#ncCanal").innerHTML=[...cs].map(([k,n])=>`<option value="${esc(k)}" ${k===numCanal?"selected":""}>${esc(n)}</option>`).join("")+`<option value="_novo">+ Canal novo</option>`;
@@ -701,7 +703,7 @@ document.addEventListener("click",async e=>{
     const {error}=await sb.from("hs3d_accounts").update({refresh_requested_at:new Date().toISOString()}).eq("id",id);
     b.disabled=false; b.classList.remove("carregando");
     if(error){toast("Não consegui pedir: "+error.message,true);return;}
-    pulso(b); toast("Pedido enviado. O Mac busca os números públicos em até 2 min."); return;
+    pulso(b); toast("Pedido enviado. O Mac busca os números públicos em até 2 min e pede a coleta aos agentes de postagem."); return;
   }
   const painel=card.querySelector(`[data-painel="${ac}"]`), outro=card.querySelector(`[data-painel]:not([data-painel="${ac}"])`);
   recolhe(outro,false); const abrir=!painel.classList.contains("aberto"); recolhe(painel,abrir);

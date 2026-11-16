@@ -418,6 +418,8 @@ li.sk{height:44px;border:0!important}
 .mets dd small{display:block;font:400 11px/1.2 var(--txt);color:var(--apagado)}
 .fonte-linha{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:10px;font-size:12px}
 .fonte{color:var(--fosco)}.fonte.auto::before{content:"● ";color:var(--ok)}.fonte.manual::before{content:"● ";color:var(--tung)}
+.fonte.agente::before{content:"◆ ";color:#e6b8ff}
+small.fonte.agente{font-size:inherit}
 .falhou{color:var(--erro)}
 .num-acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .mini-btn.ativo{background:var(--luz);color:var(--breu);border-color:var(--luz)}
