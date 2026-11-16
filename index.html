@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=8">
+<link rel="stylesheet" href="css/app.css?v=9">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -31,23 +31,28 @@
 
 <!-- APP -->
 <div id="app" hidden>
+  <nav class="rail" id="rail" aria-label="Seções e criar">
+    <b class="rail-marca" aria-hidden="true">HS</b>
+    <button type="button" data-ir="fila" aria-current="page" aria-label="Início"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>Início</span></button>
+    <button type="button" data-ir="hoje" aria-label="Hoje"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Hoje</span></button>
+    <button type="button" data-ir="metas" aria-label="Metas"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Metas</span></button>
+    <button type="button" class="criar" data-ir="novo" data-novo="link" aria-label="Novo formato a partir de um link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Novo</span><em>Novo formato a partir de um link. Solte ou cole um link https aqui.</em></button>
+    <button type="button" class="so-desk" data-ir="novo" data-novo="nova" aria-label="Criar formato do zero"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg><span>Criar do zero</span></button>
+    <button type="button" data-ir="numeros" aria-label="Números"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg><span>Números</span></button>
+    <button type="button" data-ir="diario" aria-label="Diário"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2zM6 3v16M10 8h5M10 12h5"/></svg><span>Diário</span></button>
+  </nav>
   <header class="topo">
     <b class="marca">Estúdio HS 3D</b>
     <span class="quem" id="quem"></span>
     <button class="sair" id="btnSair" type="button">Sair</button>
   </header>
-  <nav class="abas" aria-label="Seções">
-    <button data-ir="fila" aria-current="true">Fila</button>
-    <button data-ir="hoje">Hoje</button>
-    <button data-ir="metas">Metas</button>
-    <button data-ir="novo">Novo</button>
-    <button data-ir="numeros">Números</button>
-    <button data-ir="diario">Diário</button>
-  </nav>
   <p class="faixa" id="faixaV2" hidden></p>
 
-  <!-- FILA -->
+  <!-- INÍCIO: painel consolidado (fila em andamento + hoje + números) -->
   <section class="tela on" id="tela-fila">
+   <div class="home">
+    <section class="painel p-fila" aria-labelledby="tAndamento">
+    <header class="painel-topo"><h2 id="tAndamento">Em andamento</h2><span class="painel-sub">fila de aprovação</span></header>
     <div class="canais" role="group" aria-label="Canal">
       <button data-canal="curioso" aria-pressed="true">O Curioso<small id="n-curioso"></small></button>
       <button data-canal="zeca" aria-pressed="false">Missão Zeca<small id="n-zeca"></small></button>
@@ -116,6 +121,22 @@
         <ul id="lista"></ul>
       </div>
     </div>
+    </section>
+
+    <div class="home-dir">
+      <section class="painel p-hoje" aria-labelledby="tHojeMini">
+        <header class="painel-topo"><h2 id="tHojeMini">Hoje</h2><span class="painel-sub" id="hojeMiniData"></span>
+          <button class="ver-tudo" type="button" data-ir="hoje" aria-label="Ver tudo de Hoje">Ver tudo</button></header>
+        <div class="hoje-mini" id="hojeMini"><div class="sk sk-bloco"></div><div class="sk sk-bloco"></div></div>
+      </section>
+      <section class="painel p-num" aria-labelledby="tNumMini">
+        <header class="painel-topo"><h2 id="tNumMini">Números</h2>
+          <div class="chips" id="numMiniCanais" role="group" aria-label="Canal dos números"></div>
+          <button class="ver-tudo" type="button" data-ir="numeros" aria-label="Ver tudo de Números">Ver tudo</button></header>
+        <div class="num-grid num-mini" id="numMini"><div class="sk sk-bloco"></div><div class="sk sk-bloco"></div><div class="sk sk-bloco"></div></div>
+      </section>
+    </div>
+   </div>
   </section>
 
   <!-- HOJE -->
@@ -262,6 +283,6 @@
 
 <script src="js/supabase.umd.js"></script>
 <script src="js/config.js?v=8"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>

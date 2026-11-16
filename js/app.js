@@ -46,7 +46,7 @@ function mostrarLogin(){ $("#app").hidden=true; $("#tela-login").classList.add("
 function mostrarApp(session){
   $("#tela-login").classList.remove("on"); $("#app").hidden=false;
   $("#quem").textContent=session?.user?.email||"";
-  carregarTudo();
+  carregarTudo(); carregarNumeros();
 }
 $("#fLogin").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -69,16 +69,23 @@ sb.auth.getSession().then(({data})=>{ if(data.session){ if(!sessaoVista){sessaoV
 function ir(t){
   telaAtual=t;
   $$(".tela").forEach(s=>{ if(s.id!=="tela-login") s.classList.toggle("on",s.id==="tela-"+t); });
-  $$(".abas [data-ir]").forEach(b=>b.setAttribute("aria-current",b.dataset.ir===t));
-  const ab=document.querySelector(`.abas [data-ir="${t}"]`); if(ab&&ab.scrollIntoView) ab.scrollIntoView({block:"nearest",inline:"nearest",behavior:reduz.matches?"auto":"smooth"});
+  marcaRail();
   if(t!=="fila"){const v=$("#video"); if(!v.paused) v.pause();}
   scrollTo({top:0,behavior:reduz.matches?"auto":"smooth"});
   if(t==="metas") renderMetas(); if(t==="diario") carregarDiario(); if(t==="novo") carregarPedidos(); if(t==="hoje") renderHoje(); if(t==="numeros") carregarNumeros();
+  if(t==="fila"){ renderHojeMini(); renderNumerosMini(false); }
+}
+/* rail: ícone ativo; os dois atalhos de "Novo" acendem conforme o modo aberto */
+function marcaRail(){
+  const m=$(".modo").dataset.ativo||"link";
+  $$(".rail [data-ir]").forEach(b=>b.setAttribute("aria-current",b.dataset.ir===telaAtual&&(!b.dataset.novo||b.dataset.novo===m)?"page":"false"));
 }
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-ir],[data-canal],[data-vid]"); if(!b) return;
-  if(b.dataset.ir) return ir(b.dataset.ir);
-  if(b.dataset.canal){ if(b.dataset.canal===canal) return; canal=b.dataset.canal; $("#fila").classList.remove("troca"); void $("#fila").offsetWidth; $("#fila").classList.add("troca"); }
+  if(b.dataset.ir){ if(b.dataset.novo) modo(b.dataset.novo); return ir(b.dataset.ir); }
+  if(b.dataset.canal){ if(b.dataset.canal===canal) return; canal=b.dataset.canal;
+    if(numCanal!==canal&&contas.some(c=>c.channel===canal)){ numCanal=canal; renderNumeros(true); } // os números da home acompanham o canal
+    $("#fila").classList.remove("troca"); void $("#fila").offsetWidth; $("#fila").classList.add("troca"); }
   else { if(selId[canal]===b.dataset.vid) return; selId[canal]=b.dataset.vid; }
   $("#coment").value=""; aviso(""); renderFila();
 });
@@ -123,7 +130,7 @@ async function carregarTudo(){
     $("#faixaV2").hidden=v2||semTabelas;
     $("#faixaV2").textContent="Falta rodar o migration_v2.sql no Supabase (projeto hs3d › SQL Editor). Até lá: metas, agenda e “Criar do zero” ficam só para leitura.";
   } finally { carregando=false; carregouUmaVez=true; $("#skFila").hidden=true; }
-  renderFila();
+  renderFila(); renderHojeMini();
   if(telaAtual==="hoje") renderHoje();
 }
 async function assinar(path){
@@ -358,19 +365,11 @@ function canaisComMeta(){
   return m;
 }
 function minutos(h){const [a,b]=h.split(":").map(Number);return a*60+(b||0);}
-function renderHoje(){
-  const box=$("#hoje"), hoje=hojeSP();
-  const agoraSP=new Date().toLocaleTimeString("en-GB",{timeZone:TZ,hour:"2-digit",minute:"2-digit"}), agoraMin=minutos(agoraSP);
-  $("#hojeTitulo").textContent="Hoje, "+new Date().toLocaleDateString("pt-BR",{timeZone:TZ,weekday:"long",day:"2-digit",month:"2-digit"});
-  if(!carregouUmaVez){box.innerHTML=skel(3);return;}
-  if(!v2){
-    const rows=metasKv?.value?.rows||[];
-    box.innerHTML=`<p class="faixa local">A linha do tempo usa a agenda, que liga depois do migration_v2.sql. Metas atuais (do METAS.md):</p>`+
-      rows.map(r=>`<div class="dia-canal"><h2>${esc(r.canal)}</h2><p class="nota">${esc(r.formato)} · ${esc(r.por_dia)} por dia · ${esc(r.horarios)}</p></div>`).join("");
-    stagger(box); return;
-  }
-  const html=[...canaisComMeta()].map(([k,c])=>{
-    const ehCanalVideo=k in CANAL;
+function agoraMinSP(){ return minutos(new Date().toLocaleTimeString("en-GB",{timeZone:TZ,hour:"2-digit",minute:"2-digit"})); }
+/* um registro por canal: horários da meta casados com a agenda de hoje (usado pela aba Hoje e pelo painel da home) */
+function dadosHoje(){
+  const hoje=hojeSP();
+  return [...canaisComMeta()].map(([k,c])=>{
     const hs=[...new Set(c.metas.flatMap(m=>m.horarios||[]))].sort();
     const meta=c.metas.reduce((s,m)=>s+(+m.por_dia||0),0);
     const ag=agenda.filter(s=>s.channel===k&&diaSP(s.scheduled_at)===hoje);
@@ -383,9 +382,23 @@ function renderHoje(){
     });
     Object.keys(porHora).filter(x=>!usados.has(x)).forEach(h=>slots.push({h,its:porHora[h],meta:false}));
     slots.sort((a,b)=>minutos(a.h)-minutos(b.h));
-    const vids=new Set(ag.map(s=>s.video_id));
-    const produzidos=videos.filter(v=>v.channel===k&&diaSP(v.produced_at)===hoje).length;
-    const marcas=slots.map(s=>`<i class="${s.its.length?"cheio":"vago"}" style="--x:${minutos(s.h)/1440}" title="${esc(s.h)}"></i>`).join("");
+    return {k,nome:c.nome,ehCanalVideo:k in CANAL,slots,meta,feitos:new Set(ag.map(s=>s.video_id)).size,
+      produzidos:videos.filter(v=>v.channel===k&&diaSP(v.produced_at)===hoje).length};
+  });
+}
+const reguaHTML=(slots,agoraMin,vivo)=>`<div class="regua${vivo?" vivo":""}" aria-hidden="true"><span class="agora" style="--x:${agoraMin/1440}"></span>${
+  slots.map(s=>`<i class="${s.its.length?"cheio":"vago"}" style="--x:${minutos(s.h)/1440}" title="${esc(s.h)}"></i>`).join("")}<em style="--x:0">0h</em><em style="--x:.25">6h</em><em style="--x:.5">12h</em><em style="--x:.75">18h</em></div>`;
+function renderHoje(){
+  const box=$("#hoje"), agoraMin=agoraMinSP();
+  $("#hojeTitulo").textContent="Hoje, "+new Date().toLocaleDateString("pt-BR",{timeZone:TZ,weekday:"long",day:"2-digit",month:"2-digit"});
+  if(!carregouUmaVez){box.innerHTML=skel(3);return;}
+  if(!v2){
+    const rows=metasKv?.value?.rows||[];
+    box.innerHTML=`<p class="faixa local">A linha do tempo usa a agenda, que liga depois do migration_v2.sql. Metas atuais (do METAS.md):</p>`+
+      rows.map(r=>`<div class="dia-canal"><h2>${esc(r.canal)}</h2><p class="nota">${esc(r.formato)} · ${esc(r.por_dia)} por dia · ${esc(r.horarios)}</p></div>`).join("");
+    stagger(box); return;
+  }
+  const html=dadosHoje().map(({k,nome,ehCanalVideo,slots,meta,feitos,produzidos})=>{
     const linhas=slots.map(s=>{
       const passou=minutos(s.h)<agoraMin;
       const v=s.its.length?videos.find(x=>x.id===s.its[0].video_id):null;
@@ -395,16 +408,39 @@ function renderHoje(){
         <span class="tx">${v?`<strong>${esc(v.title)}</strong><small>${esc(pl)}${s.meta?"":" · fora dos horários da meta"}${v.status==="postado"?" · postado":""}</small>`
           :`<strong>Vago</strong><small>${passou?"horário já passou sem vídeo agendado":"nenhum vídeo agendado ainda"}</small>`}</span></li>`;}).join("");
     return `<div class="dia-canal ${k}">
-      <div class="dc-topo"><h2>${esc(c.nome)}</h2>
-        <span class="placar"><b>${vids.size}</b>/${meta||"–"} <small>agendados hoje</small></span>
+      <div class="dc-topo"><h2>${esc(nome)}</h2>
+        <span class="placar"><b>${feitos}</b>/${meta||"–"} <small>agendados hoje</small></span>
         ${ehCanalVideo?`<span class="placar"><b>${produzidos}</b> <small>produzidos hoje</small></span>`:""}</div>
-      <div class="regua" aria-hidden="true"><span class="agora" style="--x:${agoraMin/1440}"></span>${marcas}<em style="--x:0">0h</em><em style="--x:.25">6h</em><em style="--x:.5">12h</em><em style="--x:.75">18h</em></div>
+      ${reguaHTML(slots,agoraMin)}
       ${slots.length?`<ol class="slots2">${linhas}</ol>`:`<p class="nota">Sem horários na meta. <button class="link" data-ir="metas">Definir na aba Metas</button></p>`}
-      ${(meta&&vids.size<meta)?`<p class="falta">Faltam ${meta-vids.size} vídeo(s) agendado(s) para bater a meta de hoje.</p>`:""}
+      ${(meta&&feitos<meta)?`<p class="falta">Faltam ${meta-feitos} vídeo(s) agendado(s) para bater a meta de hoje.</p>`:""}
     </div>`;
   }).join("");
   box.innerHTML=html; stagger(box);
   $$("#hoje .regua").forEach(r=>requestAnimationFrame(()=>r.classList.add("vivo")));
+}
+/* Hoje condensado na home: mesmos dados, uma linha por horário. Só anima na primeira vez (o painel se redesenha a cada 60 s). */
+let hojeMiniVisto=false;
+function renderHojeMini(){
+  const box=$("#hojeMini"), agoraMin=agoraMinSP();
+  $("#hojeMiniData").textContent=new Date().toLocaleDateString("pt-BR",{timeZone:TZ,weekday:"long",day:"2-digit",month:"2-digit"});
+  if(!carregouUmaVez) return; // o esqueleto já está no HTML
+  if(!v2){
+    const rows=metasKv?.value?.rows||[];
+    box.innerHTML=`<p class="vazio-mini"><b>Agenda desligada</b>A linha do tempo liga depois do migration_v2.sql.${rows.length?" Metas do METAS.md: "+rows.map(r=>esc(r.canal)+" "+esc(r.horarios)).join(" · "):""}</p>`;
+    return;
+  }
+  box.innerHTML=dadosHoje().map(({k,nome,slots,meta,feitos})=>{
+    const linhas=slots.map(s=>{
+      const passou=minutos(s.h)<agoraMin;
+      const v=s.its.length?videos.find(x=>x.id===s.its[0].video_id):null;
+      return `<li class="${s.its.length?"cheio":"vago"}${passou?" passou":""}"><b>${esc(s.h)}</b><span class="pt"></span><span class="tx">${v?esc(v.title):s.its.length?"Agendado":passou?"Vago, já passou":"Vago"}</span></li>`;}).join("");
+    return `<div class="hm-canal ${esc(k)}">
+      <div class="hm-topo"><h3>${esc(nome)}</h3><span class="placar"><b>${feitos}</b>/${meta||"–"} <small>agendados</small></span></div>
+      ${reguaHTML(slots,agoraMin,hojeMiniVisto)}
+      ${slots.length?`<ol class="hm-slots">${linhas}</ol>`:`<p class="vazio-mini"><b>Sem horários na meta</b><button class="link" data-ir="metas">Definir em Metas</button></p>`}
+    </div>`;}).join("");
+  if(!hojeMiniVisto){ hojeMiniVisto=true; stagger(box); requestAnimationFrame(()=>$$("#hojeMini .regua").forEach(r=>r.classList.add("vivo"))); }
 }
 const skel=n=>Array.from({length:n},()=>`<div class="sk sk-bloco"></div>`).join("");
 
@@ -527,7 +563,35 @@ function modo(m){
   $$(".modo [data-modo]").forEach(b=>b.setAttribute("aria-selected",b.dataset.modo===m));
   $(".modo").dataset.ativo=m;
   $("#fLink").classList.toggle("on",m==="link"); $("#fNova").classList.toggle("on",m==="nova");
+  marcaRail();
 }
+/* soltar ou colar um link https em qualquer lugar do painel abre Novo › Copiar de um link com o campo preenchido.
+   Nada é enviado sozinho, e arquivo não sobe: o painel não tem upload. */
+function receberLink(txt){
+  const u=httpsUrl(String(txt||"").split(/\r?\n/).map(l=>l.trim()).find(l=>l&&!l.startsWith("#")));
+  if(!u){ toast("Só aceito link começando com https://",true); return; }
+  modo("link"); ir("novo");
+  const i=$("#link"); i.value=u; i.dispatchEvent(new Event("input",{bubbles:true})); i.focus({preventScroll:true});
+  toast("Link colocado em Novo. Confira o canal e envie o pedido.");
+}
+const emCampo=e=>e.target instanceof Element&&e.target.closest("input,textarea,select,[contenteditable]");
+const arrasteUtil=e=>!$("#app").hidden&&!emCampo(e)&&["Files","text/uri-list","text/plain"].some(t=>Array.from(e.dataTransfer?.types||[]).includes(t));
+document.addEventListener("dragover",e=>{ if(!arrasteUtil(e)) return; e.preventDefault(); e.dataTransfer.dropEffect="copy"; document.body.classList.add("arrastando"); });
+document.addEventListener("dragleave",e=>{ if(!e.relatedTarget) document.body.classList.remove("arrastando"); });
+document.addEventListener("dragend",()=>document.body.classList.remove("arrastando"));
+document.addEventListener("drop",e=>{
+  document.body.classList.remove("arrastando");
+  if(!arrasteUtil(e)) return; e.preventDefault();
+  const dt=e.dataTransfer;
+  if(dt.files&&dt.files.length){ modo("link"); ir("novo"); $("#link").focus({preventScroll:true});
+    toast("O painel não recebe arquivo de vídeo. Cole o link https do vídeo, ou descreva em “Criar do zero”.",true); return; }
+  receberLink(dt.getData("text/uri-list")||dt.getData("text/plain"));
+});
+document.addEventListener("paste",e=>{
+  if($("#app").hidden||emCampo(e)) return;
+  const t=(e.clipboardData?.getData("text/plain")||"").trim();
+  if(httpsUrl(t)&&!/\s/.test(t)){ e.preventDefault(); receberLink(t); } // texto comum colado fora de campo é ignorado
+});
 $$(".modo [data-modo]").forEach(b=>b.addEventListener("click",()=>modo(b.dataset.modo)));
 $("#link").addEventListener("input",e=>{const v=e.target.value;
   const p=/youtu\.?be/i.test(v)?"YouTube":/tiktok/i.test(v)?"TikTok":/instagram/i.test(v)?"Instagram":v.trim()?"outro site":"";
@@ -660,17 +724,12 @@ function delta(pts){
 const FONTE={auto:"automático",manual:"manual",agente:"agente"};
 const nomeFonte=s=>FONTE[s]||"manual";
 function fonte(n){ return n?`<span class="fonte ${esc(n.source)}"${n.source==="agente"?` title="Coletado pelo agente de postagem no portal do próprio canal (só leitura)"`:""}>${nomeFonte(n.source)} · ${esc(fmtData(n.captured_at))}</span>`:""; }
-function renderNumeros(animar){
-  const cs=canaisNumeros(); if(!cs.has(numCanal)) numCanal=cs.keys().next().value;
-  $("#numCanais").innerHTML=[...cs].map(([k,n])=>`<button type="button" data-ncanal="${esc(k)}" aria-pressed="${k===numCanal}">${esc(n)}</button>`).join("");
-  $("#numAviso").hidden=!!v4; $("#numAviso").textContent="Falta rodar o migration_v4.sql no Supabase (projeto hs3d › SQL Editor). Até lá, os números ficam vazios e não dá pra salvar.";
-  const cards=contas.filter(c=>c.channel===numCanal);  // canais nunca se misturam
-  $("#numCards").innerHTML=cards.length?cards.map(c=>{
+/* cabeçalho + número grande + histórico + métricas: igual na aba Números e no painel da home */
+function numTopoHTML(c){
     const pl=c.platform, f=ultimo(c.channel,pl,"followers"), v=ultimo(c.channel,pl,"views"), lk=ultimo(c.channel,pl,"likes"), ps=ultimo(c.channel,pl,"posts");
-    const pts=serie(c.channel,pl), st=numStatus[c.id], cn=CONECTAR[pl];
+    const pts=serie(c.channel,pl), st=numStatus[c.id];
     const novo=[f,v,lk,ps].filter(Boolean).sort((a,b)=>new Date(b.captured_at)-new Date(a.captured_at))[0];
-    return `<article class="num-card ${pl}" data-acc="${esc(c.id)}">
-      <header><span class="ico ${pl}" aria-hidden="true"></span><b>${PLAT[pl]}</b>${httpsUrl(c.url)?`<a href="${esc(httpsUrl(c.url))}" target="_blank" rel="noopener noreferrer">${esc(c.handle||"abrir")}</a>`:`<span>${esc(c.handle||"")}</span>`}</header>
+    return `      <header><span class="ico ${pl}" aria-hidden="true"></span><b>${PLAT[pl]}</b>${httpsUrl(c.url)?`<a href="${esc(httpsUrl(c.url))}" target="_blank" rel="noopener noreferrer">${esc(c.handle||"abrir")}</a>`:`<span>${esc(c.handle||"")}</span>`}</header>
       <div class="big"><b data-conta="${f?.followers??""}">${fmtN(f?.followers)}</b><small>${SEGUIDOR[pl]}</small>${delta(pts)}</div>
       ${spark(pts)}
       <dl class="mets">
@@ -678,7 +737,29 @@ function renderNumeros(animar){
         <div><dt>Curtidas</dt><dd>${fmtN(lk?.likes)}</dd></div>
         <div><dt>Posts</dt><dd>${fmtN(ps?.posts)}</dd></div>
       </dl>
-      <p class="fonte-linha">${novo?fonte(novo):"<span class='fonte'>sem números ainda</span>"}${st&&!st.ok?`<span class="falhou">busca automática falhou: informe à mão</span>`:""}</p>
+      <p class="fonte-linha">${novo?fonte(novo):"<span class='fonte'>sem números ainda</span>"}${st&&!st.ok?`<span class="falhou">busca automática falhou: informe à mão</span>`:""}</p>`;
+}
+function renderNumerosMini(animar){
+  if(v4===null) return; // ainda não carregou: o esqueleto do HTML fica
+  const cs=canaisNumeros();
+  $("#numMiniCanais").innerHTML=[...cs].map(([k,n])=>`<button type="button" data-ncanal="${esc(k)}" aria-pressed="${k===numCanal}">${esc(n)}</button>`).join("");
+  const cards=contas.filter(c=>c.channel===numCanal);  // canais nunca se misturam
+  const box=$("#numMini");
+  box.innerHTML=cards.length?cards.map(c=>`<article class="num-card ${c.platform}">${numTopoHTML(c)}</article>`).join("")
+    :`<p class="vazio-mini"><b>Nenhuma conta neste canal</b><button class="link" data-ir="numeros">Adicionar em Números</button></p>`;
+  if(animar){ stagger(box); requestAnimationFrame(()=>$$("#numMini .spark").forEach(s=>s.classList.add("vivo"))); contar(box); }
+  else $$("#numMini .spark").forEach(s=>s.classList.add("vivo","instant"));
+}
+function renderNumeros(animar){
+  const cs=canaisNumeros(); if(!cs.has(numCanal)) numCanal=cs.keys().next().value;
+  renderNumerosMini(animar);
+  $("#numCanais").innerHTML=[...cs].map(([k,n])=>`<button type="button" data-ncanal="${esc(k)}" aria-pressed="${k===numCanal}">${esc(n)}</button>`).join("");
+  $("#numAviso").hidden=!!v4; $("#numAviso").textContent="Falta rodar o migration_v4.sql no Supabase (projeto hs3d › SQL Editor). Até lá, os números ficam vazios e não dá pra salvar.";
+  const cards=contas.filter(c=>c.channel===numCanal);  // canais nunca se misturam
+  $("#numCards").innerHTML=cards.length?cards.map(c=>{
+    const pl=c.platform, cn=CONECTAR[pl];
+    return `<article class="num-card ${pl}" data-acc="${esc(c.id)}">
+      ${numTopoHTML(c)}
       <div class="num-acoes">
         <button class="mini-btn" type="button" data-nacao="informar" ${v4?"":"disabled"}>Informar números</button>
         ${c.auto!==false?`<button class="mini-btn" type="button" data-nacao="atualizar" ${v4?"":"disabled"}>Atualizar agora</button>`:""}
@@ -695,7 +776,7 @@ function renderNumeros(animar){
       </form></div></div>
       <div class="recolhe" data-painel="conectar"><div class="recolhe-in" inert><p class="conectar-nota"><b>${cn[0]}</b> ${cn[1]}</p></div></div>
     </article>`;}).join(""):`<p class="nota">Nenhuma conta cadastrada para este canal. Use “Adicionar conta” abaixo.</p>`;
-  if(animar){ stagger($("#numCards")); requestAnimationFrame(()=>$$("#numCards .spark").forEach(s=>s.classList.add("vivo"))); contar(); }
+  if(animar){ stagger($("#numCards")); requestAnimationFrame(()=>$$("#numCards .spark").forEach(s=>s.classList.add("vivo"))); contar($("#numCards")); }
   else $$("#numCards .spark").forEach(s=>s.classList.add("vivo","instant"));
   // vídeos do canal
   const vistos=new Map();
@@ -715,9 +796,9 @@ function renderNumeros(animar){
   $("#ncCanal").innerHTML=[...cs].map(([k,n])=>`<option value="${esc(k)}" ${k===numCanal?"selected":""}>${esc(n)}</option>`).join("")+`<option value="_novo">+ Canal novo</option>`;
   $("#fNumVid").querySelector("button").disabled=$("#fNumConta").querySelector("button").disabled=!v4;
 }
-function contar(){
+function contar(root){
   if(reduz.matches) return;
-  $$("#numCards .big b[data-conta]").forEach(el=>{const alvo=+el.dataset.conta; if(!alvo||alvo<10) return; const t0=performance.now();
+  root.querySelectorAll(".big b[data-conta]").forEach(el=>{const alvo=+el.dataset.conta; if(!alvo||alvo<10) return; const t0=performance.now();
     const passo=t=>{const k=Math.min(1,(t-t0)/700), e=1-Math.pow(1-k,3); el.textContent=fmtN(Math.round(alvo*e)); if(k<1) requestAnimationFrame(passo);}; requestAnimationFrame(passo);});
 }
 document.addEventListener("click",async e=>{
