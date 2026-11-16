@@ -8,6 +8,7 @@ const CANAL={curioso:"O Curioso",zeca:"Missão Zeca"};
 const PLAT={instagram:"Instagram",tiktok:"TikTok",youtube:"YouTube"};
 const ETAPAS=[["roteiro","Roteiro"],["edicao","Edição"],["avaliador","Avaliador"],["aguardando","Você"],["aprovado","Aprovado"],["agendado","Agenda"],["postado","Postado"]];
 const ETIQ={roteiro:"Roteiro",edicao:"Edição",avaliador:"No Avaliador",aguardando:"Aguardando você",aprovado:"Aprovado",agendado:"Agendado",postado:"Postado"};
+const DEC={aprovado:"Aprovado",reprovado:"Reprovado",ajuste:"Ajuste pedido"};
 const FMT_ST=[["novo","Novo"],["em_criacao","Em criação"],["piloto","Piloto"],["aprovado","Aprovado"]];
 const cfg=window.HS3D_CONFIG||{};
 const TZ="America/Sao_Paulo", OFF="-03:00"; // Brasil sem horário de verão desde 2019
@@ -121,6 +122,8 @@ const agendaDe=id=>agenda.filter(s=>s.video_id===id);
 function etapa(v){
   let e=v.stage;
   if(v.status==="postado") return "postado";
+  const ult=decisoes.find(d=>d.video_id===v.id);
+  if(ult&&(ult.decision==="ajuste"||ult.decision==="reprovado")&&(!v.produced_at||new Date(ult.created_at)>new Date(v.produced_at))) return "edicao";
   if(!e){
     if(v.status==="aprovado") e="aprovado";
     else if(v.status==="reprovado") e="edicao";
@@ -149,7 +152,7 @@ const dur=s=>{s=Math.round(+s||0);return s?Math.floor(s/60)+":"+String(s%60).pad
 let ultimoVideo=null, ultimoAgenda=null;
 async function renderFila(){
   for(const k of ["curioso","zeca"]){
-    const n=videos.filter(v=>v.channel===k&&v.status==="aguardando"&&v.preview_path).length;
+    const n=videos.filter(v=>v.channel===k&&v.status==="aguardando"&&v.preview_path&&etapa(v)==="aguardando").length;
     $("#n-"+k).textContent=n?n+" aguardando você":(videos.some(v=>v.channel===k)?"nada aguardando":"sem vídeos ainda");
   }
   $$("[data-canal]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.canal===canal));
@@ -169,7 +172,8 @@ async function renderFila(){
   its.forEach(async v=>{const u=await urlPoster(v); const el=document.querySelector(`[data-poster="${CSS.escape(v.id)}"]`); if(u&&el) el.style.backgroundImage=`url("${u}")`;});
   $("#pTitulo").textContent=it.title; $("#pMeta").textContent=[it.episode,dur(it.duration_s)].filter(Boolean).join(", ");
   $("#dTitulo").textContent=it.title+(it.episode?", "+it.episode:"");
-  if(it.preview_path){ $("#dStatus").textContent=ST[it.status]||it.status; $("#dStatus").className="st "+it.status; }
+  if(it.preview_path&&etapa(it)==="edicao"&&it.status!=="reprovado"){ $("#dStatus").textContent="Em ajuste"; $("#dStatus").className="st aguardando"; }
+  else if(it.preview_path){ $("#dStatus").textContent=ST[it.status]||it.status; $("#dStatus").className="st "+it.status; }
   else { $("#dStatus").textContent="Em produção"; $("#dStatus").className="st aguardando"; }
   const stp=$("#stepper"), sh=stepperHTML(it);
   if(stp.dataset.h!==sh){ stp.dataset.h=sh; stp.classList.remove("vivo"); stp.innerHTML=sh; void stp.offsetWidth; requestAnimationFrame(()=>stp.classList.add("vivo")); }
@@ -180,10 +184,14 @@ async function renderFila(){
   else {rel.textContent="O Avaliador ainda não salvou o parecer deste vídeo em AVALIADOR.md.";rel.className="rel sem";}
   $("#notasBox").hidden=!it.notes_md; $("#notas").textContent=it.notes_md||"";
   const fim=it.status==="postado"||!it.preview_path;
-  $("#aprovar").disabled=$("#reprovar").disabled=fim;
+  $("#aprovar").disabled=$("#reprovar").disabled=$("#pedirAjuste").disabled=fim;
+  $("#aprovar").disabled=fim||it.status==="aprovado";
+  $("#aprovar").textContent=it.status==="aprovado"?"Aprovado ✓":"Aprovar";
   const hs=decisoes.filter(d=>d.video_id===it.id);
-  $("#hist").innerHTML=hs.length?hs.map(d=>`<div><b>${d.decision==="aprovado"?"Aprovado":"Reprovado"}</b> · ${esc(fmtData(d.created_at))} (Brasília)${d.decided_by?" · "+esc(d.decided_by):""}${d.comment?"<br>"+esc(d.comment):""}${d.synced_at?"<br>✓ entregue ao Hermes":"<br>… aguardando o Mac sincronizar"}</div>`).join(""):"";
+  $("#hist").innerHTML=hs.length?hs.map(d=>`<div class="${d.decision}"><b>${DEC[d.decision]||esc(d.decision)}</b> · ${esc(fmtData(d.created_at))} (Brasília)${d.decided_by?" · "+esc(d.decided_by):""}${d.comment?"<br>"+esc(d.comment):""}${d.synced_at?"<br>✓ entregue ao Hermes":"<br>… aguardando o Mac sincronizar"}</div>`).join(""):"";
   renderAgenda(it);
+  abrirAgenda(it.status==="aprovado"||it.status==="postado", ultimoVideo!==it.id);
+  if(ultimoVideo!==it.id) fecharComent(true);
   // vídeo
   const vEl=$("#video"), pl=$("#player");
   if(ultimoVideo!==it.id){
@@ -261,20 +269,59 @@ $("#salvarAgenda").addEventListener("click",async e=>{
   ultimoAgenda=null; await carregarTudo();
 });
 
+/* ---------- decisão: Aprovar | Pedir ajuste | Reprovar ---------- */
+function recolhe(el,abrir,instant){
+  if(instant){el.classList.add("instant");requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.remove("instant")));}
+  el.classList.toggle("aberto",abrir); el.firstElementChild.inert=!abrir;
+}
+let agendaAberta=null;
+function abrirAgenda(abrir,instant){
+  const w=$("#agendaWrap"), mudou=agendaAberta!==abrir;
+  recolhe(w,abrir,instant||agendaAberta===null); agendaAberta=abrir;
+  $("#agendaFechada").hidden=abrir;
+  if(abrir&&mudou&&!instant) setTimeout(()=>w.scrollIntoView({behavior:reduz.matches?"auto":"smooth",block:"nearest"}),reduz.matches?0:260);
+}
+let modoComent=null;
+function abrirComent(m){
+  if(modoComent===m){fecharComent();return;}
+  modoComent=m; const aj=m==="ajuste";
+  $("#comentRot").textContent=aj?"O que mudar na edição?":"Por que reprovar? (obrigatório)";
+  $("#coment").placeholder=aj?"Ex.: legenda maior no 0:10, trocar a música do final, cortar a pausa no começo":"O que está errado e precisa refazer?";
+  $("#enviarComent").textContent=aj?"Enviar ajuste":"Enviar reprovação";
+  $("#enviarComent").classList.toggle("nao",!aj);
+  $("#comentNota").textContent=aj?"Vai pro Hermes → Editor → Avaliador → volta pra sua fila.":"Volta pro Editor com o seu comentário.";
+  $("#pedirAjuste").setAttribute("aria-expanded",aj); $("#reprovar").setAttribute("aria-expanded",!aj);
+  $("#pedirAjuste").classList.toggle("ativo",aj); $("#reprovar").classList.toggle("ativo",!aj);
+  recolhe($("#ajusteBox"),true);
+  setTimeout(()=>$("#coment").focus({preventScroll:true}),reduz.matches?0:200);
+}
+function fecharComent(instant){
+  modoComent=null; recolhe($("#ajusteBox"),false,instant);
+  ["#pedirAjuste","#reprovar"].forEach(x=>{$(x).setAttribute("aria-expanded","false");$(x).classList.remove("ativo");});
+}
 async function decidir(decisao,btn){
   const it=videos.find(v=>v.id===selId[canal]); if(!it) return;
   const c=$("#coment").value.trim();
-  if(decisao==="reprovado"&&!c){aviso("Escreva o que precisa mudar antes de reprovar.",true);$("#coment").focus();$("#coment").classList.remove("treme");void $("#coment").offsetWidth;$("#coment").classList.add("treme");return;}
-  $("#aprovar").disabled=$("#reprovar").disabled=true; btn.classList.add("carregando"); aviso("Registrando…");
-  const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:decisao,comment:c||null});
+  if(decisao!=="aprovado"&&!c){aviso(decisao==="ajuste"?"Escreva o que mudar na edição.":"Escreva o que precisa mudar antes de reprovar.",true);$("#coment").focus();$("#coment").classList.remove("treme");void $("#coment").offsetWidth;$("#coment").classList.add("treme");return;}
+  const bs=["#aprovar","#reprovar","#pedirAjuste","#enviarComent"].map(x=>$(x));
+  bs.forEach(b=>b.disabled=true); btn.classList.add("carregando"); aviso("Registrando…");
+  const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:decisao,comment:decisao==="aprovado"?null:c});
   btn.classList.remove("carregando");
-  if(error){aviso("Não consegui registrar: "+error.message,true);$("#aprovar").disabled=$("#reprovar").disabled=false;return;}
-  $("#coment").value=""; pulso(btn);
+  if(error){
+    const semV3=decisao==="ajuste"&&/check constraint|violates|decision/i.test(error.message);
+    aviso(semV3?"“Pedir ajuste” liga depois do migration_v3.sql no Supabase (projeto hs3d › SQL Editor).":"Não consegui registrar: "+error.message,true);
+    bs.forEach(b=>b.disabled=false); return;}
+  $("#coment").value=""; pulso(btn); if(decisao!=="aprovado") fecharComent();
   await carregarTudo();
-  aviso(decisao==="aprovado"?"Aprovado. Agora defina quando posta (acima). O Hermes recebe no Mac em até 2 minutos.":"Reprovado com comentário. O Hermes devolve para ajuste.");
+  aviso(decisao==="aprovado"?"Aprovado. Defina abaixo quando posta. O Hermes recebe no Mac em até 2 minutos."
+    :decisao==="ajuste"?"Ajuste pedido. O Hermes manda pro Editor, depois o Avaliador confere e o vídeo volta pra sua fila."
+    :"Reprovado com comentário. O Hermes devolve para ajuste.");
 }
 $("#aprovar").addEventListener("click",e=>decidir("aprovado",e.currentTarget));
-$("#reprovar").addEventListener("click",e=>decidir("reprovado",e.currentTarget));
+$("#pedirAjuste").addEventListener("click",()=>abrirComent("ajuste"));
+$("#reprovar").addEventListener("click",()=>abrirComent("reprovado"));
+$("#cancelarComent").addEventListener("click",()=>{$("#coment").value="";aviso("");fecharComent();});
+$("#enviarComent").addEventListener("click",e=>{ if(modoComent) decidir(modoComent,e.currentTarget); });
 
 /* ---------- hoje ---------- */
 function canaisComMeta(){

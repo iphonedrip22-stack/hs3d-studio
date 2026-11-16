@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=3">
+<link rel="stylesheet" href="css/app.css?v=4">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -72,7 +72,27 @@
           <button class="mini-btn" id="copiarCaminho" type="button">Copiar caminho</button>
         </div>
 
-        <div class="agenda" id="agendaBox">
+        <h2 class="sub2">Parecer do Avaliador</h2>
+        <div class="rel" id="rel"></div>
+        <details class="notas" id="notasBox"><summary>Notas de produção (NOTAS.md)</summary><pre id="notas"></pre></details>
+        <div class="decide">
+          <button class="btn" id="aprovar" type="button">Aprovar</button>
+          <button class="btn meio" id="pedirAjuste" type="button" aria-expanded="false" aria-controls="ajusteBox">Pedir ajuste</button>
+          <button class="btn nao" id="reprovar" type="button" aria-expanded="false" aria-controls="ajusteBox">Reprovar</button>
+        </div>
+        <div class="recolhe" id="ajusteBox"><div class="recolhe-in">
+          <label class="campo"><span id="comentRot">O que mudar na edição?</span>
+            <textarea id="coment" placeholder="Ex.: legenda maior no 0:10, trocar a música do final, cortar a pausa no começo"></textarea></label>
+          <div class="ajuste-acoes">
+            <button class="mini-btn" id="cancelarComent" type="button">Cancelar</button>
+            <button class="btn sm" id="enviarComent" type="button">Enviar ajuste</button>
+          </div>
+          <p class="nota" id="comentNota">Vai pro Hermes → Editor → Avaliador → volta pra sua fila.</p>
+        </div></div>
+        <p class="aviso" id="aviso" role="status"></p>
+        <p class="nota">Aprovar só libera o vídeo para a etapa de postagem no Maestri. Este painel não posta nada.</p>
+        <div class="recolhe" id="agendaWrap"><div class="recolhe-in">
+          <div class="agenda" id="agendaBox">
           <h2>Quando posta</h2>
           <p class="nota" id="agendaDica"></p>
           <div class="plats" id="plats"></div>
@@ -83,17 +103,8 @@
           <p class="aviso" id="agendaMsg" role="status"></p>
         </div>
 
-        <h2 class="sub2">Parecer do Avaliador</h2>
-        <div class="rel" id="rel"></div>
-        <details class="notas" id="notasBox"><summary>Notas de produção (NOTAS.md)</summary><pre id="notas"></pre></details>
-        <label class="campo"><span>Seu comentário (obrigatório para reprovar)</span>
-          <textarea id="coment" placeholder="O que precisa mudar antes de liberar?"></textarea></label>
-        <div class="decide">
-          <button class="btn nao" id="reprovar" type="button">Reprovar</button>
-          <button class="btn" id="aprovar" type="button">Aprovar</button>
-        </div>
-        <p class="aviso" id="aviso" role="status"></p>
-        <p class="nota">Aprovar só libera o vídeo para a etapa de postagem no Maestri. Este painel não posta nada.</p>
+        </div></div>
+        <p class="nota fechada" id="agendaFechada">Os horários de postagem abrem aqui quando você aprovar o vídeo.</p>
         <div class="hist" id="hist"></div>
       </div>
 
@@ -207,6 +218,6 @@
 
 <script src="js/supabase.umd.js"></script>
 <script src="js/config.js?v=1"></script>
-<script src="js/app.js?v=3"></script>
+<script src="js/app.js?v=4"></script>
 </body>
 </html>

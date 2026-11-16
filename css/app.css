@@ -365,3 +365,22 @@ li.sk{height:44px;border:0!important}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001ms!important;transition-delay:0s!important;scroll-behavior:auto!important}
 }
 @media(max-width:400px){.stepper li:not(.trilho){font-size:10.5px;letter-spacing:-.01em}}
+
+/* v3: três ações + seções que deslizam */
+.decide{grid-template-columns:1fr 1fr}
+.decide #aprovar{grid-column:1/-1}
+.btn.meio{background:none;border-color:var(--tung);color:var(--tung)}
+.btn.meio.ativo{background:var(--tung);color:var(--breu)}
+.btn.nao.ativo{background:var(--cortina);color:var(--luz)}
+.btn.sm.nao{background:none}
+.recolhe{display:grid;grid-template-rows:0fr;transition:grid-template-rows .45s var(--ease)}
+.recolhe.aberto{grid-template-rows:1fr}
+.recolhe-in{min-height:0;overflow:hidden;opacity:0;transform:translateY(-14px);transition:opacity .3s,transform .45s var(--ease)}
+.recolhe.aberto>.recolhe-in{opacity:1;transform:none;transition-delay:.06s}
+.recolhe.instant,.recolhe.instant>.recolhe-in{transition:none!important}
+.ajuste-acoes{display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:12px}
+.nota.fechada{margin-top:16px;padding:10px 12px;border:1px dashed var(--borda);border-radius:4px}
+.hist .ajuste b{color:var(--tung)}.hist .reprovado b{color:var(--erro)}
+@media(min-width:1000px){.decide{grid-template-columns:1.4fr 1fr 1fr}.decide #aprovar{grid-column:auto}}
+.decide .btn{padding:0 12px;white-space:nowrap}
+@media(min-width:1000px){.decide .btn{font-size:18px}}
