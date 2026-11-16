@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=6">
+<link rel="stylesheet" href="css/app.css?v=7">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -129,6 +129,13 @@
   <section class="tela" id="tela-metas">
     <div class="pagina">
       <h1>Metas</h1>
+      <section class="formatos-bloco" aria-labelledby="tFormatos">
+        <h2 id="tFormatos">Formatos</h2>
+        <p class="lead">Os 10 primeiros vídeos de cada formato passam por você. Com 10 revisados e 80% aprovados, aparece “Liberar formato”: aí o vídeo que o Avaliador aprovar vai direto pra Aprovado (continua na Fila com a etiqueta “liberado”). Pausa quando quiser. Postar continua precisando do seu ok.</p>
+        <p class="faixa local" id="faixaV6" hidden>Falta rodar o migration_v6.sql no Supabase (projeto hs3d › SQL Editor). Até lá o progresso aparece, mas liberar fica desligado.</p>
+        <div id="formatos"></div>
+      </section>
+      <h2 class="sub-metas">Metas por dia</h2>
       <p class="lead">Quantos vídeos por dia e em que horários cada formato posta. O que você salvar aqui vira o METAS.md que o Hermes lê.</p>
       <div id="metas"></div>
       <button class="btn largo fantasma" id="novaMeta" type="button" hidden>+ Nova meta</button>
@@ -253,6 +260,6 @@
 
 <script src="js/supabase.umd.js"></script>
 <script src="js/config.js?v=1"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

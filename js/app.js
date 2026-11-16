@@ -26,7 +26,7 @@ if(!window.supabase||!cfg.supabaseUrl){bootErr("Não carreguei a biblioteca do S
 const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:"hs3d-studio-auth"}});
 
-let videos=[],decisoes=[],agenda=[],metas=[],metasKv=null,canal="curioso",selId={curioso:null,zeca:null};
+let videos=[],decisoes=[],agenda=[],metas=[],metasKv=null,formatos=[],v6=null,canal="curioso",selId={curioso:null,zeca:null};
 let semTabelas=false, v2=null, carregouUmaVez=false, telaAtual="fila";
 const urlCache={};
 const faltaTabela=e=>e&&/does not exist|schema cache|not find|PGRST205|42P01/i.test(e.message||"");
@@ -89,16 +89,18 @@ async function carregarTudo(){
       $("#vazio").hidden=false;
       $("#vazio").textContent=semTabelas?"As tabelas do painel ainda não foram criadas no Supabase (falta colar o schema.sql no SQL Editor).":"Erro ao carregar a fila: "+r.error.message; }
     else { semTabelas=false; videos=r.data||[]; }
-    const [d,a,m,k]=await Promise.all([
-      sb.from("hs3d_decisions").select("*").order("created_at",{ascending:false}).limit(200),
+    const [d,a,m,k,fm]=await Promise.all([
+      sb.from("hs3d_decisions").select("*").order("created_at",{ascending:false}).limit(1000),
       sb.from("hs3d_schedule").select("*").order("scheduled_at",{ascending:true}).limit(500),
       sb.from("hs3d_metas").select("*").order("ordem",{ascending:true}).order("created_at",{ascending:true}),
-      sb.from("hs3d_kv").select("*").eq("key","metas").maybeSingle()]);
+      sb.from("hs3d_kv").select("*").eq("key","metas").maybeSingle(),
+      sb.from("hs3d_formats").select("*")]);
     decisoes=d.error?[]:(d.data||[]);
     v2=!(faltaTabela(a.error)||faltaTabela(m.error));
     agenda=a.error?[]:(a.data||[]);
     metas=m.error?[]:(m.data||[]);
     metasKv=k.error?null:k.data;
+    v6=!fm.error; formatos=fm.error?[]:(fm.data||[]);
     $("#faixaV2").hidden=v2||semTabelas;
     $("#faixaV2").textContent="Falta rodar o migration_v2.sql no Supabase (projeto hs3d › SQL Editor). Até lá: metas, agenda e “Criar do zero” ficam só para leitura.";
   } finally { carregando=false; carregouUmaVez=true; $("#skFila").hidden=true; }
@@ -168,13 +170,13 @@ async function renderFila(){
     return `<li><button class="item" data-vid="${esc(v.id)}" aria-pressed="${v.id===it.id}">
     <span class="mini" data-poster="${esc(v.id)}"></span>
     <span class="t">${esc(v.title)}</span>
-    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${ag.length?`<span class="qd">⏱ ${esc(fmtData(ag[0].scheduled_at))}</span>`:""}</span></button></li>`;}).join("");
+    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${v.auto_aprovado?`<span class="lib" title="Formato liberado: passou sozinho depois do Avaliador">liberado</span>`:""}${ag.length?`<span class="qd">⏱ ${esc(fmtData(ag[0].scheduled_at))}</span>`:""}</span></button></li>`;}).join("");
   $("#lista").dataset.k=canal+its.length; if(novaLista) stagger($("#lista"));
   its.forEach(async v=>{const u=await urlPoster(v); const el=document.querySelector(`[data-poster="${CSS.escape(v.id)}"]`); if(u&&el) el.style.backgroundImage=`url("${u}")`;});
   $("#pTitulo").textContent=it.title; $("#pMeta").textContent=[it.episode,dur(it.duration_s)].filter(Boolean).join(", ");
   $("#dTitulo").textContent=it.title+(it.episode?", "+it.episode:"");
   if(it.preview_path&&etapa(it)==="edicao"&&it.status!=="reprovado"){ $("#dStatus").textContent="Em ajuste"; $("#dStatus").className="st aguardando"; }
-  else if(it.preview_path){ $("#dStatus").textContent=ST[it.status]||it.status; $("#dStatus").className="st "+it.status; }
+  else if(it.preview_path){ $("#dStatus").innerHTML=esc(ST[it.status]||it.status)+(it.auto_aprovado&&it.status==="aprovado"?` <span class="lib">liberado</span>`:""); $("#dStatus").className="st "+it.status; }
   else { $("#dStatus").textContent="Em produção"; $("#dStatus").className="st aguardando"; }
   const stp=$("#stepper"), sh=stepperHTML(it);
   if(stp.dataset.h!==sh){ stp.dataset.h=sh; stp.classList.remove("vivo"); stp.innerHTML=sh; void stp.offsetWidth; requestAnimationFrame(()=>stp.classList.add("vivo")); }
@@ -189,7 +191,8 @@ async function renderFila(){
   $("#aprovar").disabled=fim||it.status==="aprovado";
   $("#aprovar").textContent=it.status==="aprovado"?"Aprovado ✓":"Aprovar";
   const hs=decisoes.filter(d=>d.video_id===it.id);
-  $("#hist").innerHTML=hs.length?hs.map(d=>`<div class="${d.decision}"><b>${DEC[d.decision]||esc(d.decision)}</b> · ${esc(fmtData(d.created_at))} (Brasília)${d.decided_by?" · "+esc(d.decided_by):""}${d.comment?"<br>"+esc(d.comment):""}${d.synced_at?"<br>✓ entregue ao Hermes":"<br>… aguardando o Mac sincronizar"}</div>`).join(""):"";
+  const auto=it.auto_aprovado?`<div class="aprovado auto"><b>Aprovado automaticamente</b>${it.auto_aprovado_at?" · "+esc(fmtData(it.auto_aprovado_at))+" (Brasília)":""}<br>Formato liberado e o Avaliador aprovou. Ainda dá pra pedir ajuste ou reprovar; reprovar tira a liberação do formato.</div>`:"";
+  $("#hist").innerHTML=auto+(hs.length?hs.map(d=>`<div class="${d.decision}"><b>${DEC[d.decision]||esc(d.decision)}</b> · ${esc(fmtData(d.created_at))} (Brasília)${d.decided_by?" · "+esc(d.decided_by):""}${d.comment?"<br>"+esc(d.comment):""}${d.synced_at?"<br>✓ entregue ao Hermes":"<br>… aguardando o Mac sincronizar"}</div>`).join(""):"");
   renderAgenda(it);
   abrirAgenda(it.status==="aprovado"||it.status==="postado", ultimoVideo!==it.id);
   if(ultimoVideo!==it.id) fecharComent(true);
@@ -312,6 +315,10 @@ async function decidir(decisao,btn){
     const semV3=decisao==="ajuste"&&/check constraint|violates|decision/i.test(error.message);
     aviso(semV3?"“Pedir ajuste” liga depois do migration_v3.sql no Supabase (projeto hs3d › SQL Editor).":"Não consegui registrar: "+error.message,true);
     bs.forEach(b=>b.disabled=false); return;}
+  if(decisao==="reprovado"&&it.auto_aprovado&&v6){
+    const f=formatos.find(x=>x.id===formatoDe(it));
+    if(f&&f.status==="liberado") await sb.from("hs3d_formats").update({status:"em_teste",status_reason:`Você reprovou “${it.title}”, que tinha passado sozinho: voltou a precisar de você.`}).eq("id",f.id);
+  }
   $("#coment").value=""; pulso(btn); if(decisao!=="aprovado") fecharComent();
   await carregarTudo();
   aviso(decisao==="aprovado"?"Aprovado. Defina abaixo quando posta. O Hermes recebe no Mac em até 2 minutos."
@@ -387,6 +394,7 @@ let metasRascunho=null;
 function renderMetas(){
   const box=$("#metas");
   if(!carregouUmaVez){box.innerHTML=skel(2);setTimeout(renderMetas,600);return;}
+  renderFormatos();
   $("#novaMeta").hidden=!v2;
   if(!v2){
     const rows=metasKv?.value?.rows||[];
@@ -752,4 +760,78 @@ setInterval(()=>{
   if(document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
   carregarTudo();
 },60000);
+/* ---------- formatos: aprovação de formato ("Liberar formato") ---------- */
+const FST={em_teste:["Em teste","Os vídeos passam por você."],liberavel:["Liberável","Já dá pra liberar."],liberado:["Liberado","Passa sozinho depois do Avaliador."],pausado:["Pausado","Liberação suspensa: passa por você."]};
+function formatoDe(v){
+  if(v.formato) return v.formato;
+  const c=metas.filter(m=>m.canal===v.channel); return c.length===1?c[0].id:null;
+}
+function listaFormatos(){
+  const m=new Map();
+  metas.forEach(x=>m.set(x.id,{id:x.id,nome:x.formato||x.id,canal:x.canal,canal_nome:x.canal_nome||CANAL[x.canal]||x.canal,status:"em_teste",min_reviews:10,min_rate:0.8,avaliador_recent:[],_sem:true}));
+  formatos.forEach(f=>m.set(f.id,{...(m.get(f.id)||{}),...f,_sem:false}));
+  return [...m.values()];
+}
+function statsFormato(f){
+  const vs=videos.filter(v=>formatoDe(v)===f.id);
+  const rev=[];
+  vs.forEach(v=>{const d=decisoes.find(x=>x.video_id===v.id&&["aprovado","reprovado","ajuste"].includes(x.decision)); if(d) rev.push({v,d});});
+  rev.sort((a,b)=>new Date(a.d.created_at)-new Date(b.d.created_at));
+  const ok=rev.filter(r=>r.d.decision==="aprovado").length, n=rev.length, taxa=n?ok/n:0;
+  const min=+f.min_reviews||10, minT=+f.min_rate||0.8;
+  const rec=f.avaliador_recent||[], rep=rec.filter(e=>e.verdict==="reprovado").length;
+  let st=f.status||"em_teste"; if(st==="em_teste"&&n>=min&&taxa>=minT) st="liberavel";
+  return {vs,rev,n,ok,taxa,min,minT,rec,rep,st,autos:vs.filter(v=>v.auto_aprovado).length};
+}
+function renderFormatos(){
+  const box=$("#formatos"); if(!box) return;
+  const fs=listaFormatos();
+  $("#faixaV6").hidden=!!v6||!v2;
+  if(!fs.length){ box.innerHTML="<p class='nota'>Crie uma meta abaixo para o formato aparecer aqui.</p>"; return; }
+  box.innerHTML=fs.map(f=>{const s=statsFormato(f), [nome,sub]=FST[s.st];
+    const pct=Math.min(1,s.n/s.min), anel=2*Math.PI*26;
+    const dots=Array.from({length:s.min},(_,i)=>{const r=s.rev[i]; return `<i class="${r?r.d.decision:""}" title="${r?esc(r.v.title)+": "+esc(DEC[r.d.decision]||r.d.decision):"ainda não revisado"}"></i>`;}).join("");
+    const pode=!!v6;
+    let acoes="";
+    if(s.st==="liberavel") acoes=`<button class="btn sm" data-facao="liberar" ${pode?"":"disabled"}>Liberar formato</button>`;
+    else if(s.st==="liberado") acoes=`<button class="mini-btn" data-facao="pausar">Pausar</button><button class="mini-btn" data-facao="revogar">Voltar a revisar tudo</button>`;
+    else if(s.st==="pausado") acoes=`<button class="btn sm" data-facao="retomar">Retomar liberação</button><button class="mini-btn" data-facao="revogar">Voltar a revisar tudo</button>`;
+    else acoes=`<span class="nota">Faltam ${Math.max(0,s.min-s.n)} revisão(ões)${s.n&&s.taxa<s.minT?` e a taxa precisa chegar a ${Math.round(s.minT*100)}%`:""}.</span>`;
+    return `<article class="fmt-card ${s.st}" data-fid="${esc(f.id)}">
+      <header><div><h3>${esc(f.nome)}</h3><span class="canal-tag ${esc(f.canal)}">${esc(f.canal_nome)}</span></div>
+        <span class="fst ${s.st}">${nome}</span></header>
+      <div class="fmt-corpo">
+        <svg class="anel" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26"/><circle class="v" cx="32" cy="32" r="26" style="--c:${anel.toFixed(1)};--o:${(anel*(1-pct)).toFixed(1)}"/></svg>
+        <div class="fmt-num"><b>${Math.min(s.n,s.min)}/${s.min}</b><small>revisados por você</small></div>
+        <div class="fmt-num"><b>${s.n?Math.round(s.taxa*100)+"%":"–"}</b><small>aprovados (mín. ${Math.round(s.minT*100)}%)</small></div>
+      </div>
+      <div class="dots" aria-label="Suas últimas decisões">${dots}</div>
+      <p class="fmt-sub">${sub}${s.st==="liberado"?` ${s.autos} vídeo(s) passaram sozinhos.`:""} Avaliador: ${s.rep} reprovado(s) nos últimos ${s.rec.length||0} (3 tiram a liberação).</p>
+      ${f.status_reason&&s.st!=="liberado"?`<p class="fmt-motivo">${esc(f.status_reason)}</p>`:""}
+      <div class="fmt-acoes">${acoes}<span class="aviso" role="status"></span></div>
+    </article>`;}).join("");
+  stagger(box);
+  requestAnimationFrame(()=>box.querySelectorAll(".anel").forEach(a=>a.classList.add("vivo")));
+}
+$("#formatos")?.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-facao]"); if(!b) return;
+  const card=b.closest(".fmt-card"), f=listaFormatos().find(x=>x.id===card.dataset.fid), ac=b.dataset.facao;
+  const av=card.querySelector(".aviso");
+  if(!v6){ av.textContent="Liga depois do migration_v6.sql no Supabase."; av.className="aviso erro"; return; }
+  const msgs={liberar:`Liberar “${f.nome}”? Os próximos vídeos dele vão direto pra Aprovado quando o Avaliador aprovar (você ainda vê tudo na Fila). Postar continua precisando do seu ok.`,
+    revogar:`Voltar “${f.nome}” a passar tudo por você?`};
+  if(msgs[ac]&&!confirm(msgs[ac])) return;
+  const novo={liberar:"liberado",retomar:"liberado",pausar:"pausado",revogar:"em_teste"}[ac];
+  const row={status:novo,status_reason:ac==="pausar"?"Pausado por você.":ac==="revogar"?"Você voltou o formato a passar tudo por você.":null};
+  if(novo==="liberado"){ row.liberado_at=new Date().toISOString(); row.liberado_by=$("#quem")?.textContent||null; }
+  b.disabled=true; b.classList.add("carregando");
+  const {error}=f._sem
+    ? await sb.from("hs3d_formats").upsert({id:f.id,nome:f.nome,canal:f.canal,canal_nome:f.canal_nome,...row})
+    : await sb.from("hs3d_formats").update(row).eq("id",f.id);
+  b.classList.remove("carregando"); b.disabled=false;
+  if(error){ av.textContent="Não consegui salvar: "+error.message; av.className="aviso erro"; return; }
+  pulso(b);
+  toast(novo==="liberado"?`“${f.nome}” liberado. O Mac aplica em até 2 min.`:novo==="pausado"?"Liberação pausada: volta a passar por você.":"Formato voltou a passar tudo por você.");
+  await carregarTudo(); renderFormatos();
+});
 })();
