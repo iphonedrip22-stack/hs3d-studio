@@ -2,6 +2,10 @@
 (function(){
 "use strict";
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+/* v7: só links https (nada de javascript:, data:, http:) */
+const httpsUrl=u=>{try{const x=new URL(String(u||""));return x.protocol==="https:"?x.href:null;}catch(e){return null;}};
+/* anti-clickjacking: o painel não abre dentro de iframe de outro site */
+if(window.top!==window.self){try{window.top.location=window.self.location.href;}catch(e){document.documentElement.innerHTML="";throw new Error("frame");}}
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ST={aguardando:"Aguardando aprovação",aprovado:"Aprovado",reprovado:"Reprovado",postado:"Postado"};
 const CANAL={curioso:"O Curioso",zeca:"Missão Zeca"};
@@ -317,7 +321,7 @@ async function decidir(decisao,btn){
     bs.forEach(b=>b.disabled=false); return;}
   if(decisao==="reprovado"&&it.auto_aprovado&&v6){
     const f=formatos.find(x=>x.id===formatoDe(it));
-    if(f&&f.status==="liberado") await sb.from("hs3d_formats").update({status:"em_teste",status_reason:`Você reprovou “${it.title}”, que tinha passado sozinho: voltou a precisar de você.`}).eq("id",f.id);
+    if(f&&f.status==="liberado") await sb.rpc("hs3d_set_format_status",{p_id:f.id,p_status:"em_teste",p_reason:`Você reprovou “${it.title}”, que tinha passado sozinho: voltou a precisar de você.`});
   }
   $("#coment").value=""; pulso(btn); if(decisao!=="aprovado") fecharComent();
   await carregarTudo();
@@ -651,7 +655,7 @@ function renderNumeros(animar){
     const pts=serie(c.channel,pl), st=numStatus[c.id], cn=CONECTAR[pl];
     const novo=[f,v,lk,ps].filter(Boolean).sort((a,b)=>new Date(b.captured_at)-new Date(a.captured_at))[0];
     return `<article class="num-card ${pl}" data-acc="${esc(c.id)}">
-      <header><span class="ico ${pl}" aria-hidden="true"></span><b>${PLAT[pl]}</b>${c.url?`<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.handle||"abrir")}</a>`:`<span>${esc(c.handle||"")}</span>`}</header>
+      <header><span class="ico ${pl}" aria-hidden="true"></span><b>${PLAT[pl]}</b>${httpsUrl(c.url)?`<a href="${esc(httpsUrl(c.url))}" target="_blank" rel="noopener noreferrer">${esc(c.handle||"abrir")}</a>`:`<span>${esc(c.handle||"")}</span>`}</header>
       <div class="big"><b data-conta="${f?.followers??""}">${fmtN(f?.followers)}</b><small>${SEGUIDOR[pl]}</small>${delta(pts)}</div>
       ${spark(pts)}
       <dl class="mets">
@@ -683,9 +687,9 @@ function renderNumeros(animar){
   nums.filter(n=>n.channel===numCanal&&n.scope==="video").forEach(n=>{const k=n.platform+"|"+(n.video_ref||n.video_title); if(!vistos.has(k)) vistos.set(k,n);});
   const vids=[...vistos.values()].sort((a,b)=>(b.views||0)-(a.views||0));
   $("#numVideos").innerHTML=vids.length?vids.map(n=>{const mx=vids[0].views||1;
-    const link=n.platform==="youtube"&&n.video_ref&&!/^https?:/.test(n.video_ref)?"https://youtube.com/shorts/"+n.video_ref:(/^https?:/.test(n.video_ref||"")?n.video_ref:null);
+    const link=n.platform==="youtube"&&n.video_ref&&/^[A-Za-z0-9_-]{6,20}$/.test(n.video_ref)?"https://youtube.com/shorts/"+n.video_ref:httpsUrl(n.video_ref);
     return `<li><span class="pl-chip ${n.platform}">${PLAT[n.platform]}</span>
-      <span class="vt">${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(n.video_title||n.video_ref)}</a>`:esc(n.video_title||n.video_ref)}</span>
+      <span class="vt">${link?`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(n.video_title||n.video_ref)}</a>`:esc(n.video_title||n.video_ref)}</span>
       <span class="vv"><b>${fmtN(n.views)}</b> views${n.likes!=null?` · ${fmtN(n.likes)} curt.`:""}${n.comments!=null?` · ${fmtN(n.comments)} coment.`:""}${n.shares!=null?` · ${fmtN(n.shares)} compart.`:""}${n.saves!=null?` · ${fmtN(n.saves)} salv.`:""}</span>
       <span class="barra"><i style="--p:${((n.views||0)/mx).toFixed(3)}"></i></span>
       <small class="${n.source==="agente"?"fonte agente":""}">${nomeFonte(n.source)} · ${esc(fmtData(n.captured_at))}</small></li>`;}).join(""):"<li class='nota'>Sem números de vídeos ainda.</li>";
@@ -746,7 +750,8 @@ $("#fNumConta").addEventListener("submit",async e=>{
   let ch=$("#ncCanal").value, nome=canaisNumeros().get(ch);
   if(ch==="_novo"){nome=$("#ncCanalNovo").value.trim(); ch=slug(nome); if(!ch){msg.className="aviso erro";msg.textContent="Escreva o nome do canal.";return;}}
   const pl=$("#ncPlat").value, h=$("#ncHandle").value.trim(); if(!h) return;
-  const u=/^https?:/.test(h)?h:null, handle=u?null:(h.startsWith("@")?h:"@"+h);
+  if(/^[a-z][a-z0-9+.-]*:/i.test(h)&&!httpsUrl(h)){msg.className="aviso erro";msg.textContent="Use um link https:// (ou só o @ da conta).";return;}
+  const u=httpsUrl(h), handle=u?null:(h.startsWith("@")?h:"@"+h.replace(/[^A-Za-z0-9._-]/g,""));
   const url=u||(pl==="youtube"?"https://www.youtube.com/"+handle:pl==="instagram"?"https://www.instagram.com/"+handle.slice(1)+"/":"https://www.tiktok.com/"+handle);
   const {error}=await sb.from("hs3d_accounts").insert({id:ch+":"+pl,channel:ch,channel_name:nome,platform:pl,handle:handle||u,url,auto:true,ordem:100});
   if(error){msg.className="aviso erro";msg.textContent=/duplicate|unique/i.test(error.message)?"Esse canal já tem conta nessa plataforma.":"Não consegui adicionar: "+error.message;return;}
@@ -822,12 +827,10 @@ $("#formatos")?.addEventListener("click",async e=>{
     revogar:`Voltar “${f.nome}” a passar tudo por você?`};
   if(msgs[ac]&&!confirm(msgs[ac])) return;
   const novo={liberar:"liberado",retomar:"liberado",pausar:"pausado",revogar:"em_teste"}[ac];
-  const row={status:novo,status_reason:ac==="pausar"?"Pausado por você.":ac==="revogar"?"Você voltou o formato a passar tudo por você.":null};
-  if(novo==="liberado"){ row.liberado_at=new Date().toISOString(); row.liberado_by=$("#quem")?.textContent||null; }
+  const motivo=ac==="pausar"?"Pausado por você.":ac==="revogar"?"Você voltou o formato a passar tudo por você.":null;
   b.disabled=true; b.classList.add("carregando");
-  const {error}=f._sem
-    ? await sb.from("hs3d_formats").upsert({id:f.id,nome:f.nome,canal:f.canal,canal_nome:f.canal_nome,...row})
-    : await sb.from("hs3d_formats").update(row).eq("id",f.id);
+  /* v7: a regra (>= 10 revisões e >= 80% aprovados) é conferida no banco; o navegador não grava status direto */
+  const {error}=await sb.rpc("hs3d_set_format_status",{p_id:f.id,p_status:novo,p_reason:motivo});
   b.classList.remove("carregando"); b.disabled=false;
   if(error){ av.textContent="Não consegui salvar: "+error.message; av.className="aviso erro"; return; }
   pulso(b);
