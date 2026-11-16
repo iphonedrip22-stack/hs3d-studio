@@ -83,6 +83,20 @@ document.addEventListener("click",e=>{
   $("#coment").value=""; aviso(""); renderFila();
 });
 
+/* ---------- alerta de saúde da esteira (hs3d_kv.alerta, escrito pelo worker do Mac) ---------- */
+async function mostrarAlerta(){
+  const {data}=await sb.from("hs3d_kv").select("value").eq("key","alerta").maybeSingle();
+  let el=$("#alertaSaude");
+  const its=(data?.value?.ativo&&data.value.itens)||[];
+  if(!its.length){ if(el) el.hidden=true; return; }
+  if(!el){ el=document.createElement("div"); el.id="alertaSaude"; el.setAttribute("role","alert");
+    el.style.cssText="background:#7a1d1d;color:#fff;padding:10px 14px;font-size:14px;line-height:1.35;border-bottom:1px solid #b33";
+    $("#app").prepend(el); }
+  el.hidden=false;
+  el.textContent="";
+  its.forEach(i=>{const p=document.createElement("p"); p.style.margin="2px 0"; p.textContent="⚠ "+String(i.msg||""); el.appendChild(p);});
+}
+
 /* ---------- dados ---------- */
 let carregando=false;
 async function carregarTudo(){
@@ -100,6 +114,7 @@ async function carregarTudo(){
       sb.from("hs3d_kv").select("*").eq("key","metas").maybeSingle(),
       sb.from("hs3d_formats").select("*")]);
     decisoes=d.error?[]:(d.data||[]);
+    mostrarAlerta();
     v2=!(faltaTabela(a.error)||faltaTabela(m.error));
     agenda=a.error?[]:(a.data||[]);
     metas=m.error?[]:(m.data||[]);
