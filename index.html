@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=2">
+<link rel="stylesheet" href="css/app.css?v=3">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -23,7 +23,7 @@
     <label class="campo"><span>Senha</span><input id="senha" type="password" autocomplete="current-password" required></label>
     <button class="btn" id="btnEntrar" type="submit">Entrar no painel</button>
     <p class="aviso" id="loginMsg" role="status"></p>
-    <p class="nota">Use o mesmo e-mail e senha do Cortes Studio.</p>
+    <p class="nota">Use o usuário criado no projeto Supabase hs3d.</p>
   </form>
 </section>
 
@@ -36,10 +36,12 @@
   </header>
   <nav class="abas" aria-label="Seções">
     <button data-ir="fila" aria-current="true">Fila</button>
+    <button data-ir="hoje">Hoje</button>
     <button data-ir="metas">Metas</button>
-    <button data-ir="novo">Novo<span class="lg"> formato</span></button>
+    <button data-ir="novo">Novo</button>
     <button data-ir="diario">Diário</button>
   </nav>
+  <p class="faixa" id="faixaV2" hidden></p>
 
   <!-- FILA -->
   <section class="tela on" id="tela-fila">
@@ -47,22 +49,43 @@
       <button data-canal="curioso" aria-pressed="true">O Curioso<small id="n-curioso"></small></button>
       <button data-canal="zeca" aria-pressed="false">Missão Zeca<small id="n-zeca"></small></button>
     </div>
+    <div class="esqueleto" id="skFila" aria-hidden="true"><span class="sk sk-player"></span><span class="sk sk-l"></span><span class="sk sk-l curta"></span><span class="sk sk-bloco"></span></div>
     <p class="vazio" id="vazio" hidden></p>
-    <div class="fila" id="fila">
+    <div class="fila" id="fila" hidden>
       <div class="palco">
         <div class="player" id="player">
           <video id="video" playsinline controls preload="metadata"></video>
+          <div class="semvideo" id="semVideo" hidden><b id="semVideoT">Ainda sem vídeo</b><span id="semVideoS"></span></div>
           <div class="cartela" id="cartela"><b id="pTitulo"></b><span id="pMeta"></span></div>
         </div>
         <p class="dica" id="dica"></p>
       </div>
 
       <div class="parecer">
-        <h2>Parecer do Avaliador</h2>
         <p class="sobre"><span id="dTitulo"></span> <span class="st" id="dStatus"></span></p>
+        <ol class="stepper" id="stepper" aria-label="Etapa da esteira"></ol>
+        <p class="etapa-nota" id="etapaNota" hidden></p>
+
+        <div class="onde" id="onde" hidden>
+          <span class="rot">Onde está</span>
+          <span class="trilha" id="trilha"></span>
+          <button class="mini-btn" id="copiarCaminho" type="button">Copiar caminho</button>
+        </div>
+
+        <div class="agenda" id="agendaBox">
+          <h2>Quando posta</h2>
+          <p class="nota" id="agendaDica"></p>
+          <div class="plats" id="plats"></div>
+          <div class="agenda-acoes">
+            <button class="mini-btn" id="sugerir" type="button">Usar próximo horário da meta</button>
+            <button class="btn sm" id="salvarAgenda" type="button">Salvar horários</button>
+          </div>
+          <p class="aviso" id="agendaMsg" role="status"></p>
+        </div>
+
+        <h2 class="sub2">Parecer do Avaliador</h2>
         <div class="rel" id="rel"></div>
         <details class="notas" id="notasBox"><summary>Notas de produção (NOTAS.md)</summary><pre id="notas"></pre></details>
-        <p class="nota" id="caminho"></p>
         <label class="campo"><span>Seu comentário (obrigatório para reprovar)</span>
           <textarea id="coment" placeholder="O que precisa mudar antes de liberar?"></textarea></label>
         <div class="decide">
@@ -81,36 +104,88 @@
     </div>
   </section>
 
+  <!-- HOJE -->
+  <section class="tela" id="tela-hoje">
+    <div class="pagina">
+      <h1 id="hojeTitulo">Hoje</h1>
+      <p class="lead">Horários do dia de cada canal contra a meta. Verde = já tem vídeo agendado; tracejado = vago.</p>
+      <div id="hoje"></div>
+    </div>
+  </section>
+
   <!-- METAS -->
   <section class="tela" id="tela-metas">
     <div class="pagina">
-      <h1>Metas de hoje</h1>
-      <p class="lead">Quanto cada canal precisa entregar (METAS.md) e o que saiu da esteira hoje.</p>
+      <h1>Metas</h1>
+      <p class="lead">Quantos vídeos por dia e em que horários cada formato posta. O que você salvar aqui vira o METAS.md que o Hermes lê.</p>
       <div id="metas"></div>
+      <button class="btn largo fantasma" id="novaMeta" type="button" hidden>+ Nova meta</button>
       <p class="nota" id="metasSync"></p>
     </div>
   </section>
 
-  <!-- NOVO FORMATO -->
+  <!-- NOVO -->
   <section class="tela" id="tela-novo">
     <div class="pagina estreita">
       <h1>Novo formato</h1>
-      <p class="lead">Cole o link de um vídeo de referência. O pedido vai para o Hermes, que monta a receita do formato fora da esteira.</p>
-      <form id="fNovo">
+      <div class="modo" role="tablist" aria-label="Tipo de pedido">
+        <button type="button" role="tab" data-modo="link" aria-selected="true">Copiar de um link</button>
+        <button type="button" role="tab" data-modo="nova" aria-selected="false">Criar do zero</button>
+        <span class="modo-pill" aria-hidden="true"></span>
+      </div>
+
+      <form id="fLink" class="form-modo on">
+        <p class="lead">Cole o link de um vídeo de referência. O Hermes estuda e monta a receita do formato fora da esteira.</p>
         <label class="campo"><span>Link do vídeo de referência (YouTube, TikTok, Instagram ou outro)</span>
           <input id="link" type="url" inputmode="url" placeholder="https://" required></label>
         <p class="aviso" id="plat"></p>
         <div class="campo"><span>Canal que recebe o formato</span>
-          <div class="seg">
-            <label><input type="radio" name="canalNovo" value="curioso" checked><span>O Curioso</span></label>
-            <label><input type="radio" name="canalNovo" value="zeca"><span>Missão Zeca</span></label>
+          <div class="seg tres" data-canal-grupo="L">
+            <label><input type="radio" name="canalL" value="curioso" checked><span>O Curioso</span></label>
+            <label><input type="radio" name="canalL" value="zeca"><span>Missão Zeca</span></label>
+            <label><input type="radio" name="canalL" value="novo"><span>Canal novo</span></label>
           </div>
+          <input class="extra" id="canalNovoL" type="text" placeholder="Nome do canal ou série nova" hidden>
         </div>
         <label class="campo"><span>Nome do formato (opcional)</span><input id="nomeFmt" type="text" placeholder="Ex.: curioso_ranking"></label>
         <label class="campo"><span>Notas</span><textarea id="notasFmt" placeholder="O que copiar da referência: ritmo, gancho, estilo de legenda"></textarea></label>
-        <button class="btn largo" id="btnNovo" type="submit">Enviar pedido de formato</button>
-        <p class="aviso" id="novoMsg" role="status"></p>
+        <button class="btn largo" id="btnLink" type="submit">Enviar pedido de formato</button>
+        <p class="aviso" id="linkMsg" role="status"></p>
       </form>
+
+      <form id="fNova" class="form-modo">
+        <p class="lead">Descreva uma história ou formato novo, para qualquer canal ou série. O Roteirista transforma em receita e faz um piloto.</p>
+        <label class="campo"><span>Nome da história / formato</span><input id="nNome" type="text" required placeholder="Ex.: Contos do Polvo Detetive"></label>
+        <div class="campo"><span>Canal ou série</span>
+          <div class="seg tres">
+            <label><input type="radio" name="canalN" value="curioso"><span>O Curioso</span></label>
+            <label><input type="radio" name="canalN" value="zeca"><span>Missão Zeca</span></label>
+            <label><input type="radio" name="canalN" value="novo" checked><span>Canal novo</span></label>
+          </div>
+          <input class="extra" id="canalNovoN" type="text" placeholder="Nome do canal ou série nova">
+        </div>
+        <div class="campo"><span>Estilo</span>
+          <div class="seg tres">
+            <label><input type="radio" name="estiloN" value="3D" checked><span>3D</span></label>
+            <label><input type="radio" name="estiloN" value="2D"><span>2D</span></label>
+            <label><input type="radio" name="estiloN" value="outro"><span>Outro</span></label>
+          </div>
+          <input class="extra" id="estiloOutro" type="text" placeholder="Ex.: stop motion, live action com IA" hidden>
+        </div>
+        <label class="campo"><span>Premissa / história</span><textarea id="nPremissa" required placeholder="Do que se trata, qual o gancho de cada episódio, como termina"></textarea></label>
+        <label class="campo"><span>Personagens</span><textarea id="nPers" placeholder="Quem aparece, aparência, jeito de falar"></textarea></label>
+        <div class="duas">
+          <label class="campo"><span>Duração</span><input id="nDur" type="text" list="dlDur" placeholder="Ex.: 45 s"></label>
+          <label class="campo"><span>Frequência</span><input id="nFreq" type="text" list="dlFreq" placeholder="Ex.: 1 por dia"></label>
+        </div>
+        <datalist id="dlDur"><option value="30 s"><option value="45 s"><option value="60 s"><option value="90 s"></datalist>
+        <datalist id="dlFreq"><option value="1 por dia"><option value="2 por dia"><option value="3 por semana"><option value="1 por semana"></datalist>
+        <label class="campo"><span>Tom</span><input id="nTom" type="text" placeholder="Ex.: curioso e engraçado, suspense leve"></label>
+        <label class="campo"><span>Links de referência (um por linha, opcional)</span><textarea id="nRefs" placeholder="https://"></textarea></label>
+        <button class="btn largo" id="btnNova" type="submit">Enviar nova história</button>
+        <p class="aviso" id="novaMsg" role="status"></p>
+      </form>
+
       <h2 class="sub">Pedidos enviados</h2>
       <ul class="pedidos" id="pedidos"></ul>
     </div>
@@ -126,11 +201,12 @@
     </div>
   </section>
 
-  <footer class="rodape">Estúdio HS3D · O Curioso e Missão Zeca nunca se misturam · este painel não publica nada nas redes.</footer>
+  <footer class="rodape">Estúdio HS3D · cada canal no seu perfil, nunca misturados · este painel não publica nada nas redes.</footer>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="js/supabase.umd.js"></script>
 <script src="js/config.js?v=1"></script>
-<script src="js/app.js?v=1"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>
