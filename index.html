@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Estúdio HS3D</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#170f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
+<link rel="stylesheet" href="css/app.css?v=1">
+</head>
+<body>
+<noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
+<p class="boot" id="boot-error" hidden></p>
+
+<!-- LOGIN -->
+<section class="tela login" id="tela-login">
+  <form id="fLogin" novalidate>
+    <b class="marca grande">Estúdio<br>HS 3D</b>
+    <p>Painel de aprovação. Nenhum vídeo sai sem passar por aqui.</p>
+    <label class="campo"><span>E-mail</span><input id="email" type="email" autocomplete="username" inputmode="email" placeholder="voce@exemplo.com" required></label>
+    <label class="campo"><span>Senha</span><input id="senha" type="password" autocomplete="current-password" required></label>
+    <button class="btn" id="btnEntrar" type="submit">Entrar no painel</button>
+    <p class="aviso" id="loginMsg" role="status"></p>
+    <p class="nota">Use o mesmo e-mail e senha do Cortes Studio.</p>
+  </form>
+</section>
+
+<!-- APP -->
+<div id="app" hidden>
+  <header class="topo">
+    <b class="marca">Estúdio HS 3D</b>
+    <span class="quem" id="quem"></span>
+    <button class="sair" id="btnSair" type="button">Sair</button>
+  </header>
+  <nav class="abas" aria-label="Seções">
+    <button data-ir="fila" aria-current="true">Fila</button>
+    <button data-ir="metas">Metas</button>
+    <button data-ir="novo">Novo formato</button>
+    <button data-ir="diario">Diário</button>
+  </nav>
+
+  <!-- FILA -->
+  <section class="tela on" id="tela-fila">
+    <div class="canais" role="group" aria-label="Canal">
+      <button data-canal="curioso" aria-pressed="true">O Curioso<small id="n-curioso"></small></button>
+      <button data-canal="zeca" aria-pressed="false">Missão Zeca<small id="n-zeca"></small></button>
+    </div>
+    <p class="vazio" id="vazio" hidden></p>
+    <div class="fila" id="fila">
+      <div class="palco">
+        <div class="player" id="player">
+          <video id="video" playsinline controls preload="metadata"></video>
+          <div class="cartela" id="cartela"><b id="pTitulo"></b><span id="pMeta"></span></div>
+        </div>
+        <p class="dica" id="dica"></p>
+      </div>
+
+      <div class="parecer">
+        <h2>Parecer do Avaliador</h2>
+        <p class="sobre"><span id="dTitulo"></span> <span class="st" id="dStatus"></span></p>
+        <div class="rel" id="rel"></div>
+        <details class="notas" id="notasBox"><summary>Notas de produção (NOTAS.md)</summary><pre id="notas"></pre></details>
+        <p class="nota" id="caminho"></p>
+        <label class="campo"><span>Seu comentário (obrigatório para reprovar)</span>
+          <textarea id="coment" placeholder="O que precisa mudar antes de liberar?"></textarea></label>
+        <div class="decide">
+          <button class="btn nao" id="reprovar" type="button">Reprovar</button>
+          <button class="btn" id="aprovar" type="button">Aprovar</button>
+        </div>
+        <p class="aviso" id="aviso" role="status"></p>
+        <p class="nota">Aprovar só libera o vídeo para a etapa de postagem no Maestri. Este painel não posta nada.</p>
+        <div class="hist" id="hist"></div>
+      </div>
+
+      <div class="prog">
+        <h2>Programação do canal</h2>
+        <ul id="lista"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- METAS -->
+  <section class="tela" id="tela-metas">
+    <div class="pagina">
+      <h1>Metas de hoje</h1>
+      <p class="lead">Quanto cada canal precisa entregar (METAS.md) e o que saiu da esteira hoje.</p>
+      <div id="metas"></div>
+      <p class="nota" id="metasSync"></p>
+    </div>
+  </section>
+
+  <!-- NOVO FORMATO -->
+  <section class="tela" id="tela-novo">
+    <div class="pagina estreita">
+      <h1>Novo formato</h1>
+      <p class="lead">Cole o link de um vídeo de referência. O pedido vai para o Hermes, que monta a receita do formato fora da esteira.</p>
+      <form id="fNovo">
+        <label class="campo"><span>Link do vídeo de referência (YouTube, TikTok, Instagram ou outro)</span>
+          <input id="link" type="url" inputmode="url" placeholder="https://" required></label>
+        <p class="aviso" id="plat"></p>
+        <div class="campo"><span>Canal que recebe o formato</span>
+          <div class="seg">
+            <label><input type="radio" name="canalNovo" value="curioso" checked><span>O Curioso</span></label>
+            <label><input type="radio" name="canalNovo" value="zeca"><span>Missão Zeca</span></label>
+          </div>
+        </div>
+        <label class="campo"><span>Nome do formato (opcional)</span><input id="nomeFmt" type="text" placeholder="Ex.: curioso_ranking"></label>
+        <label class="campo"><span>Notas</span><textarea id="notasFmt" placeholder="O que copiar da referência: ritmo, gancho, estilo de legenda"></textarea></label>
+        <button class="btn largo" id="btnNovo" type="submit">Enviar pedido de formato</button>
+        <p class="aviso" id="novoMsg" role="status"></p>
+      </form>
+      <h2 class="sub">Pedidos enviados</h2>
+      <ul class="pedidos" id="pedidos"></ul>
+    </div>
+  </section>
+
+  <!-- DIÁRIO -->
+  <section class="tela" id="tela-diario">
+    <div class="pagina">
+      <h1>Diário da esteira</h1>
+      <p class="lead">Últimas linhas da nota “Diário da esteira” do Maestri. Cada terminal escreve uma linha quando termina algo.</p>
+      <ol class="diario" id="diario"></ol>
+      <p class="nota" id="diarioSync"></p>
+    </div>
+  </section>
+
+  <footer class="rodape">Estúdio HS3D · O Curioso e Missão Zeca nunca se misturam · este painel não publica nada nas redes.</footer>
+</div>
+
+<script src="js/supabase.umd.js"></script>
+<script src="js/config.js?v=1"></script>
+<script src="js/app.js?v=1"></script>
+</body>
+</html>
