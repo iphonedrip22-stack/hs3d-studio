@@ -28,6 +28,7 @@ ul,ol{list-style:none}
 /* abas: 4 colunas, nunca cortam em 390px */
 .abas{position:sticky;top:0;z-index:9;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:10px 12px;margin-top:10px;background:rgba(13,7,8,.94);backdrop-filter:blur(6px);border-block:1px solid var(--borda)}
 .abas button{min-height:40px;padding:0 4px;border-radius:99px;border:1px solid var(--borda);background:none;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:480px){.abas .lg{display:none}}
 .abas button[aria-current=true]{background:var(--luz);border-color:var(--luz);color:var(--breu);font-weight:600}
 
 /* letreiro dos canais */
