@@ -66,9 +66,10 @@ function ir(t){
   telaAtual=t;
   $$(".tela").forEach(s=>{ if(s.id!=="tela-login") s.classList.toggle("on",s.id==="tela-"+t); });
   $$(".abas [data-ir]").forEach(b=>b.setAttribute("aria-current",b.dataset.ir===t));
+  const ab=document.querySelector(`.abas [data-ir="${t}"]`); if(ab&&ab.scrollIntoView) ab.scrollIntoView({block:"nearest",inline:"nearest",behavior:reduz.matches?"auto":"smooth"});
   if(t!=="fila"){const v=$("#video"); if(!v.paused) v.pause();}
   scrollTo({top:0,behavior:reduz.matches?"auto":"smooth"});
-  if(t==="metas") renderMetas(); if(t==="diario") carregarDiario(); if(t==="novo") carregarPedidos(); if(t==="hoje") renderHoje();
+  if(t==="metas") renderMetas(); if(t==="diario") carregarDiario(); if(t==="novo") carregarPedidos(); if(t==="hoje") renderHoje(); if(t==="numeros") carregarNumeros();
 }
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-ir],[data-canal],[data-vid]"); if(!b) return;
@@ -574,6 +575,172 @@ $("#pedidos").addEventListener("change",async e=>{
   s.disabled=false;
   if(error){toast("Não consegui mudar: "+error.message,true);return;}
   toast("Status atualizado. O arquivo do pedido no Mac acompanha em até 2 min."); carregarPedidos();
+});
+
+
+/* ---------- números (cada canal só vê as contas dele) ---------- */
+const CONTAS_PADRAO=[
+  {id:"curioso:youtube",channel:"curioso",channel_name:"O Curioso",platform:"youtube",handle:"O Curioso 3D",url:"https://www.youtube.com/channel/UCXkf6fbirGpyb834eWgt3TA",auto:true,ordem:0},
+  {id:"curioso:instagram",channel:"curioso",channel_name:"O Curioso",platform:"instagram",handle:"@ocurioso.3d",url:"https://www.instagram.com/ocurioso.3d/",auto:true,ordem:1},
+  {id:"curioso:tiktok",channel:"curioso",channel_name:"O Curioso",platform:"tiktok",handle:"@ocurioso.3d",url:"https://www.tiktok.com/@ocurioso.3d",auto:true,ordem:2},
+  {id:"zeca:youtube",channel:"zeca",channel_name:"Missão Zeca",platform:"youtube",handle:"@missaodozeca",url:"https://www.youtube.com/@missaodozeca",auto:true,ordem:10},
+  {id:"zeca:instagram",channel:"zeca",channel_name:"Missão Zeca",platform:"instagram",handle:"@missaodozeca",url:"https://www.instagram.com/missaodozeca/",auto:true,ordem:11},
+  {id:"zeca:tiktok",channel:"zeca",channel_name:"Missão Zeca",platform:"tiktok",handle:"@missaodozeca",url:"https://www.tiktok.com/@missaodozeca",auto:true,ordem:12}];
+const SEGUIDOR={youtube:"inscritos",instagram:"seguidores",tiktok:"seguidores"};
+const PERIODO={total:"total",recentes:"vídeos recentes","28d":"últimos 28 dias","7d":"últimos 7 dias"};
+const CONECTAR={
+  youtube:["Em breve","Para conectar de verdade (views por período, retenção) precisa criar um cliente OAuth no Google Cloud com a conta do canal (YouTube Data/Analytics API). Até lá, inscritos e views dos vídeos vêm da página pública, sozinhos."],
+  instagram:["Em breve","Precisa a conta ser profissional (Criador ou Empresa), ligada a uma Página do Facebook, e um app na Meta. Até lá, seguidores e posts vêm do perfil público."],
+  tiktok:["Manual por enquanto","A API do TikTok exige um app aprovado por eles. Seguidores, curtidas e vídeos vêm do perfil público quando ele responde; views de cada vídeo você informa à mão."]};
+let contas=[],nums=[],numStatus={},v4=null,numCanal="curioso";
+const fmtN=n=>n==null?"–":Number(n).toLocaleString("pt-BR");
+async function carregarNumeros(){
+  if(!$("#numCards").children.length) $("#numCards").innerHTML=skel(3);
+  const [a,s,k]=await Promise.all([
+    sb.from("hs3d_accounts").select("*").order("ordem",{ascending:true}),
+    sb.from("hs3d_stats").select("*").order("captured_at",{ascending:false}).limit(2000),
+    sb.from("hs3d_kv").select("*").eq("key","stats_status").maybeSingle()]);
+  v4=!(faltaTabela(a.error)||faltaTabela(s.error));
+  contas=(v4&&!a.error&&a.data?.length)?a.data:CONTAS_PADRAO;
+  nums=v4&&!s.error?(s.data||[]):[];
+  numStatus=k.data?.value||{};
+  renderNumeros(true);
+}
+function canaisNumeros(){
+  const m=new Map(); contas.forEach(c=>{ if(!m.has(c.channel)) m.set(c.channel,c.channel_name||CANAL[c.channel]||c.channel); });
+  metas.forEach(x=>{ if(!m.has(x.canal)) m.set(x.canal,x.canal_nome||x.canal); });
+  return m;
+}
+function ultimo(ch,pl,campo){ return nums.find(n=>n.channel===ch&&n.platform===pl&&n.scope==="conta"&&n[campo]!=null); }
+function serie(ch,pl){
+  const pts=nums.filter(n=>n.channel===ch&&n.platform===pl&&n.scope==="conta"&&n.followers!=null).slice().reverse();
+  const porDia=new Map(); pts.forEach(n=>porDia.set(diaSP(n.captured_at),n)); return [...porDia.values()].slice(-30);
+}
+function spark(pts){
+  if(pts.length<2) return `<div class="spark vazio">histórico aparece com o tempo</div>`;
+  const vs=pts.map(p=>+p.followers), mn=Math.min(...vs), mx=Math.max(...vs), r=(mx-mn)||1;
+  const xy=vs.map((v,i)=>[(i/(vs.length-1))*120,30-((v-mn)/r)*26]);
+  const l=xy.map(p=>p.map(x=>x.toFixed(1)).join(",")).join(" ");
+  return `<svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"><polygon class="area" points="0,32 ${l} 120,32"/><polyline pathLength="1" points="${l}"/><circle cx="${xy[xy.length-1][0]}" cy="${xy[xy.length-1][1]}" r="2.4"/></svg>`;
+}
+function delta(pts){
+  if(pts.length<2) return "";
+  const fim=pts[pts.length-1], lim=Date.now()-7*864e5;
+  const ini=pts.find(p=>new Date(p.captured_at).getTime()>=lim&&p!==fim)||pts[pts.length-2];
+  const d=fim.followers-ini.followers; if(!d) return `<span class="delta">= sem mudança</span>`;
+  return `<span class="delta ${d>0?"up":"down"}">${d>0?"▲ +":"▼ "}${fmtN(d)}</span>`;
+}
+function fonte(n){ return n?`<span class="fonte ${n.source}">${n.source==="auto"?"automático":"manual"} · ${esc(fmtData(n.captured_at))}</span>`:""; }
+function renderNumeros(animar){
+  const cs=canaisNumeros(); if(!cs.has(numCanal)) numCanal=cs.keys().next().value;
+  $("#numCanais").innerHTML=[...cs].map(([k,n])=>`<button type="button" data-ncanal="${esc(k)}" aria-pressed="${k===numCanal}">${esc(n)}</button>`).join("");
+  $("#numAviso").hidden=!!v4; $("#numAviso").textContent="Falta rodar o migration_v4.sql no Supabase (projeto hs3d › SQL Editor). Até lá, os números ficam vazios e não dá pra salvar.";
+  const cards=contas.filter(c=>c.channel===numCanal);  // canais nunca se misturam
+  $("#numCards").innerHTML=cards.length?cards.map(c=>{
+    const pl=c.platform, f=ultimo(c.channel,pl,"followers"), v=ultimo(c.channel,pl,"views"), lk=ultimo(c.channel,pl,"likes"), ps=ultimo(c.channel,pl,"posts");
+    const pts=serie(c.channel,pl), st=numStatus[c.id], cn=CONECTAR[pl];
+    const novo=[f,v,lk,ps].filter(Boolean).sort((a,b)=>new Date(b.captured_at)-new Date(a.captured_at))[0];
+    return `<article class="num-card ${pl}" data-acc="${esc(c.id)}">
+      <header><span class="ico ${pl}" aria-hidden="true"></span><b>${PLAT[pl]}</b>${c.url?`<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.handle||"abrir")}</a>`:`<span>${esc(c.handle||"")}</span>`}</header>
+      <div class="big"><b data-conta="${f?.followers??""}">${fmtN(f?.followers)}</b><small>${SEGUIDOR[pl]}</small>${delta(pts)}</div>
+      ${spark(pts)}
+      <dl class="mets">
+        <div><dt>Views</dt><dd>${fmtN(v?.views)}${v?.views_period?`<small>${esc(PERIODO[v.views_period]||v.views_period)}</small>`:""}</dd></div>
+        <div><dt>Curtidas</dt><dd>${fmtN(lk?.likes)}</dd></div>
+        <div><dt>Posts</dt><dd>${fmtN(ps?.posts)}</dd></div>
+      </dl>
+      <p class="fonte-linha">${novo?fonte(novo):"<span class='fonte'>sem números ainda</span>"}${st&&!st.ok?`<span class="falhou">busca automática falhou: informe à mão</span>`:""}</p>
+      <div class="num-acoes">
+        <button class="mini-btn" type="button" data-nacao="informar" ${v4?"":"disabled"}>Informar números</button>
+        ${c.auto!==false?`<button class="mini-btn" type="button" data-nacao="atualizar" ${v4?"":"disabled"}>Atualizar agora</button>`:""}
+        <button class="mini-btn conectar" type="button" data-nacao="conectar">Conectar conta</button>
+      </div>
+      <div class="recolhe" data-painel="informar"><div class="recolhe-in" inert><form class="num-form" data-form="${esc(c.id)}">
+        <div class="duas"><label class="campo"><span>${SEGUIDOR[pl][0].toUpperCase()+SEGUIDOR[pl].slice(1)}</span><input name="followers" type="number" inputmode="numeric" min="0"></label>
+          <label class="campo"><span>Curtidas</span><input name="likes" type="number" inputmode="numeric" min="0"></label></div>
+        <div class="duas"><label class="campo"><span>Views</span><input name="views" type="number" inputmode="numeric" min="0"></label>
+          <label class="campo"><span>Período das views</span><select name="views_period"><option value="total">Total</option><option value="28d">Últimos 28 dias</option><option value="7d">Últimos 7 dias</option></select></label></div>
+        <div class="duas"><label class="campo"><span>Posts</span><input name="posts" type="number" inputmode="numeric" min="0"></label>
+          <label class="campo"><span>Observação</span><input name="note" type="text" placeholder="opcional"></label></div>
+        <div class="ajuste-acoes"><span class="aviso" role="status"></span><button class="btn sm" type="submit">Salvar</button></div>
+      </form></div></div>
+      <div class="recolhe" data-painel="conectar"><div class="recolhe-in" inert><p class="conectar-nota"><b>${cn[0]}</b> ${cn[1]}</p></div></div>
+    </article>`;}).join(""):`<p class="nota">Nenhuma conta cadastrada para este canal. Use “Adicionar conta” abaixo.</p>`;
+  if(animar){ stagger($("#numCards")); requestAnimationFrame(()=>$$("#numCards .spark").forEach(s=>s.classList.add("vivo"))); contar(); }
+  else $$("#numCards .spark").forEach(s=>s.classList.add("vivo","instant"));
+  // vídeos do canal
+  const vistos=new Map();
+  nums.filter(n=>n.channel===numCanal&&n.scope==="video").forEach(n=>{const k=n.platform+"|"+(n.video_ref||n.video_title); if(!vistos.has(k)) vistos.set(k,n);});
+  const vids=[...vistos.values()].sort((a,b)=>(b.views||0)-(a.views||0));
+  $("#numVideos").innerHTML=vids.length?vids.map(n=>{const mx=vids[0].views||1;
+    const link=n.platform==="youtube"&&n.video_ref&&!/^https?:/.test(n.video_ref)?"https://youtube.com/shorts/"+n.video_ref:(/^https?:/.test(n.video_ref||"")?n.video_ref:null);
+    return `<li><span class="pl-chip ${n.platform}">${PLAT[n.platform]}</span>
+      <span class="vt">${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(n.video_title||n.video_ref)}</a>`:esc(n.video_title||n.video_ref)}</span>
+      <span class="vv"><b>${fmtN(n.views)}</b> views${n.likes!=null?` · ${fmtN(n.likes)} curt.`:""}</span>
+      <span class="barra"><i style="--p:${((n.views||0)/mx).toFixed(3)}"></i></span>
+      <small>${n.source==="auto"?"automático":"manual"} · ${esc(fmtData(n.captured_at))}</small></li>`;}).join(""):"<li class='nota'>Sem números de vídeos ainda.</li>";
+  if(animar){ stagger($("#numVideos")); requestAnimationFrame(()=>$("#numVideos").classList.add("vivo")); }
+  $("#numVidNota").textContent="Views mais recentes de cada vídeo deste canal. YouTube vem sozinho; Instagram e TikTok por vídeo você informa à mão.";
+  // formulários de baixo
+  $("#nvPlat").innerHTML=[...new Set(cards.map(c=>c.platform))].map(p=>`<option value="${p}">${PLAT[p]}</option>`).join("")||Object.entries(PLAT).map(([k,n])=>`<option value="${k}">${n}</option>`).join("");
+  $("#ncCanal").innerHTML=[...cs].map(([k,n])=>`<option value="${esc(k)}" ${k===numCanal?"selected":""}>${esc(n)}</option>`).join("")+`<option value="_novo">+ Canal novo</option>`;
+  $("#fNumVid").querySelector("button").disabled=$("#fNumConta").querySelector("button").disabled=!v4;
+}
+function contar(){
+  if(reduz.matches) return;
+  $$("#numCards .big b[data-conta]").forEach(el=>{const alvo=+el.dataset.conta; if(!alvo||alvo<10) return; const t0=performance.now();
+    const passo=t=>{const k=Math.min(1,(t-t0)/700), e=1-Math.pow(1-k,3); el.textContent=fmtN(Math.round(alvo*e)); if(k<1) requestAnimationFrame(passo);}; requestAnimationFrame(passo);});
+}
+document.addEventListener("click",async e=>{
+  const c=e.target.closest("[data-ncanal]");
+  if(c){ if(c.dataset.ncanal!==numCanal){numCanal=c.dataset.ncanal; renderNumeros(true);} return; }
+  const b=e.target.closest("[data-nacao]"); if(!b) return;
+  const card=b.closest(".num-card"), id=card.dataset.acc, ac=b.dataset.nacao;
+  if(ac==="atualizar"){
+    b.disabled=true; b.classList.add("carregando");
+    const {error}=await sb.from("hs3d_accounts").update({refresh_requested_at:new Date().toISOString()}).eq("id",id);
+    b.disabled=false; b.classList.remove("carregando");
+    if(error){toast("Não consegui pedir: "+error.message,true);return;}
+    pulso(b); toast("Pedido enviado. O Mac busca os números públicos em até 2 min."); return;
+  }
+  const painel=card.querySelector(`[data-painel="${ac}"]`), outro=card.querySelector(`[data-painel]:not([data-painel="${ac}"])`);
+  recolhe(outro,false); const abrir=!painel.classList.contains("aberto"); recolhe(painel,abrir);
+  b.classList.toggle("ativo",abrir); card.querySelectorAll("[data-nacao]").forEach(x=>{if(x!==b) x.classList.remove("ativo");});
+  if(abrir&&ac==="informar") setTimeout(()=>painel.querySelector("input")?.focus({preventScroll:true}),reduz.matches?0:220);
+});
+document.addEventListener("submit",async e=>{
+  const f=e.target.closest("form[data-form]"); if(!f) return; e.preventDefault();
+  const acc=contas.find(c=>c.id===f.dataset.form), msg=f.querySelector(".aviso"), btn=f.querySelector("button[type=submit]");
+  const n=k=>{const v=f.elements[k].value.trim(); return v===""?null:Math.max(0,parseInt(v,10));};
+  const row={channel:acc.channel,platform:acc.platform,scope:"conta",source:"manual",followers:n("followers"),views:n("views"),likes:n("likes"),posts:n("posts"),
+    views_period:f.elements.views.value.trim()?f.elements.views_period.value:null,note:f.elements.note.value.trim()||null};
+  if([row.followers,row.views,row.likes,row.posts].every(x=>x==null)){msg.className="aviso erro";msg.textContent="Preencha pelo menos um número.";return;}
+  btn.disabled=true; btn.classList.add("carregando");
+  const {error}=await sb.from("hs3d_stats").insert(row);
+  btn.disabled=false; btn.classList.remove("carregando");
+  if(error){msg.className="aviso erro";msg.textContent="Não consegui salvar: "+error.message;return;}
+  toast("Números de "+PLAT[acc.platform]+" ("+(acc.channel_name||acc.channel)+") salvos."); await carregarNumeros();
+});
+$("#fNumVid").addEventListener("submit",async e=>{
+  e.preventDefault(); const msg=$("#nvMsg"), ref=$("#nvRef").value.trim(), views=$("#nvViews").value.trim();
+  if(!ref||views===""){msg.className="aviso erro";msg.textContent="Informe o vídeo e as views.";return;}
+  const row={channel:numCanal,platform:$("#nvPlat").value,scope:"video",source:"manual",video_ref:ref,video_title:/^https?:/.test(ref)?null:ref,
+    views:Math.max(0,parseInt(views,10)),likes:$("#nvLikes").value.trim()===""?null:Math.max(0,parseInt($("#nvLikes").value,10))};
+  const {error}=await sb.from("hs3d_stats").insert(row);
+  if(error){msg.className="aviso erro";msg.textContent="Não consegui salvar: "+error.message;return;}
+  e.target.reset(); msg.className="aviso"; msg.textContent=""; toast("Números do vídeo salvos."); await carregarNumeros();
+});
+$("#ncCanal").addEventListener("change",e=>{$("#ncCanalNovo").hidden=e.target.value!=="_novo";});
+$("#fNumConta").addEventListener("submit",async e=>{
+  e.preventDefault(); const msg=$("#ncMsg");
+  let ch=$("#ncCanal").value, nome=canaisNumeros().get(ch);
+  if(ch==="_novo"){nome=$("#ncCanalNovo").value.trim(); ch=slug(nome); if(!ch){msg.className="aviso erro";msg.textContent="Escreva o nome do canal.";return;}}
+  const pl=$("#ncPlat").value, h=$("#ncHandle").value.trim(); if(!h) return;
+  const u=/^https?:/.test(h)?h:null, handle=u?null:(h.startsWith("@")?h:"@"+h);
+  const url=u||(pl==="youtube"?"https://www.youtube.com/"+handle:pl==="instagram"?"https://www.instagram.com/"+handle.slice(1)+"/":"https://www.tiktok.com/"+handle);
+  const {error}=await sb.from("hs3d_accounts").insert({id:ch+":"+pl,channel:ch,channel_name:nome,platform:pl,handle:handle||u,url,auto:true,ordem:100});
+  if(error){msg.className="aviso erro";msg.textContent=/duplicate|unique/i.test(error.message)?"Esse canal já tem conta nessa plataforma.":"Não consegui adicionar: "+error.message;return;}
+  e.target.reset(); $("#ncCanalNovo").hidden=true; msg.textContent=""; numCanal=ch; toast("Conta adicionada. O Mac busca os números públicos em até 2 min."); await carregarNumeros();
 });
 
 /* atualiza sozinho a cada 60 s enquanto aberto (sem atrapalhar quem está editando) */

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=4">
+<link rel="stylesheet" href="css/app.css?v=5">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -39,6 +39,7 @@
     <button data-ir="hoje">Hoje</button>
     <button data-ir="metas">Metas</button>
     <button data-ir="novo">Novo</button>
+    <button data-ir="numeros">Números</button>
     <button data-ir="diario">Diário</button>
   </nav>
   <p class="faixa" id="faixaV2" hidden></p>
@@ -202,6 +203,40 @@
     </div>
   </section>
 
+  <!-- NÚMEROS -->
+  <section class="tela" id="tela-numeros">
+    <div class="pagina">
+      <h1>Números</h1>
+      <p class="lead">Seguidores, views e curtidas de cada canal, só das contas dele. O Mac busca o que é público a cada 6 h; o resto você informa à mão.</p>
+      <div class="canais num-canais" id="numCanais" role="group" aria-label="Canal"></div>
+      <p class="faixa local" id="numAviso" hidden></p>
+      <div class="num-grid" id="numCards"></div>
+      <h2 class="sub">Vídeos</h2>
+      <p class="nota" id="numVidNota"></p>
+      <ul class="num-videos" id="numVideos"></ul>
+      <details class="num-add" id="numAddVid"><summary>+ Informar números de um vídeo</summary>
+        <form id="fNumVid" class="num-form">
+          <div class="duas">
+            <label class="campo"><span>Plataforma</span><select id="nvPlat"></select></label>
+            <label class="campo"><span>Views</span><input id="nvViews" type="number" inputmode="numeric" min="0" placeholder="0"></label>
+          </div>
+          <label class="campo"><span>Título ou link do vídeo</span><input id="nvRef" type="text" required placeholder="Ex.: E se… Parte 3 ou https://"></label>
+          <label class="campo"><span>Curtidas (opcional)</span><input id="nvLikes" type="number" inputmode="numeric" min="0"></label>
+          <button class="btn sm" type="submit">Salvar números do vídeo</button> <span class="aviso" id="nvMsg" role="status"></span>
+        </form></details>
+      <details class="num-add" id="numAddConta"><summary>+ Adicionar conta (canal novo ou plataforma que falta)</summary>
+        <form id="fNumConta" class="num-form">
+          <label class="campo"><span>Canal</span><select id="ncCanal"></select></label>
+          <input class="extra" id="ncCanalNovo" type="text" placeholder="Nome do canal novo" hidden>
+          <div class="duas">
+            <label class="campo"><span>Plataforma</span><select id="ncPlat"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option></select></label>
+            <label class="campo"><span>@ do perfil ou link</span><input id="ncHandle" type="text" required placeholder="@canal"></label>
+          </div>
+          <button class="btn sm" type="submit">Adicionar conta</button> <span class="aviso" id="ncMsg" role="status"></span>
+        </form></details>
+    </div>
+  </section>
+
   <!-- DIÁRIO -->
   <section class="tela" id="tela-diario">
     <div class="pagina">
@@ -218,6 +253,6 @@
 
 <script src="js/supabase.umd.js"></script>
 <script src="js/config.js?v=1"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=5"></script>
 </body>
 </html>
