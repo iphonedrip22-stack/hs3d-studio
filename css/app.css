@@ -863,3 +863,17 @@ a.h{text-decoration:none;border-bottom:1px dotted var(--borda-forte);justify-sel
 /* calendário: postado hoje (cheio, cor de info) e previsto (pontilhado) */
 .cal-chip.po{background:color-mix(in srgb,var(--info) 18%,transparent);border-color:color-mix(in srgb,var(--info) 55%,transparent)}
 .cal-chip.pv{border-style:dotted;opacity:.85}
+
+/* POSTADO = positivo e aceso (não herda o apagado de "horário já passou") — mesmo verde dos indicadores ok */
+.hm-slots li.postado,.hm-slots li.postado.passou{opacity:1;background:rgba(165,214,160,.10);box-shadow:inset 3px 0 0 var(--ok);border-radius:8px;padding:4px 6px 4px 4px}
+.hm-slots li.postado .tx{color:var(--luz);font-weight:600}
+.hm-slots li.postado b{color:var(--ok)}
+.hm-slots li.postado .pt{background:var(--ok);border:0;box-shadow:0 0 0 3px rgba(165,214,160,.28)}
+.hm-slots .post-tag{background:var(--ok);color:var(--breu);font-weight:700}
+.slot2.postado,.slot2.postado.passou{opacity:1;background:rgba(165,214,160,.08);box-shadow:inset 3px 0 0 var(--ok);border-radius:10px;padding:6px 8px 12px 6px}
+.slot2.postado .hh{color:var(--ok)}
+.slot2.postado .tx strong{color:var(--luz)}
+.slot2.postado .tx small{color:var(--ok);font-weight:600}
+.slot2.postado .pt{background:var(--ok);border:0;box-shadow:0 0 0 4px rgba(165,214,160,.28)}
+.cal-chip.po{background:rgba(165,214,160,.18);border-color:var(--ok);color:var(--luz);font-weight:600}
+.cal-leg .cal-chip.po{color:var(--ok)}
