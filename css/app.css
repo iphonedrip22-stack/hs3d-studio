@@ -731,8 +731,28 @@ a.h{text-decoration:none;border-bottom:1px dotted var(--borda-forte);justify-sel
 .novo-canal span{font-size:var(--t-sm);color:var(--texto-mudo)}
 .novo-canal .btn{margin-left:auto;flex:none}
 
+/* aba Contas: fila do perfil */
+.fila-perfil{padding:var(--s-3) var(--s-4);border:1px solid var(--borda);border-radius:var(--r-2);background:rgba(23,15,18,.4);min-width:0}
+.fila-perfil h4{margin:0 0 var(--s-2);font:var(--w-forte) 17px/1 var(--disp);color:var(--texto-mudo)}
+.fila-perfil h5{margin:var(--s-3) 0 var(--s-2);font:var(--w-forte) 14px/1 var(--disp);color:var(--texto-apagado)}
+.fp-lista{display:grid;gap:6px}
+.fp-item{display:grid;gap:4px;width:100%;min-height:44px;padding:8px 12px;text-align:left;border:1px solid var(--borda);border-radius:var(--r-2);background:var(--sup-2);color:var(--luz);cursor:pointer;transition:border-color var(--d-fast),background-color var(--d-fast)}
+.fp-item:hover{border-color:var(--borda-forte);background:var(--sup-3)}
+.fp-item:focus-visible{outline:0;border-color:var(--tung);box-shadow:0 0 0 3px rgba(240,169,58,.14)}
+.fp-item .t{font-weight:600;font-size:var(--t-sm);overflow-wrap:anywhere}
+.fp-item .m{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:var(--texto-mudo)}
+.fp-item .m .ok{color:var(--ok)}.fp-item .m .ag{color:var(--tung)}
+.fp-item .et{padding:1px 8px;border-radius:99px;background:var(--sup-3);color:var(--fosco)}
+.fp-item .et.aguardando,.fp-item .et.roteiro{color:var(--tung)}.fp-item .et.aprovado,.fp-item .et.agendado{color:var(--ok)}.fp-item .et.postado{color:var(--info)}
+.fp-post .fp-item{padding:6px 12px;background:none}
+
 /* aba Roteiro */
 #roteiroBox{display:grid;gap:var(--s-3)}
+.rt-itens{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.rt-itens button{flex:none;white-space:nowrap}
+.rt-cab .selo.postado{color:var(--info);border-color:var(--info)}
+#rtIdeia:disabled{opacity:.55;cursor:not-allowed}
+.rt-so-leitura{color:var(--info)}
 .rt-cab{display:flex;align-items:center;gap:var(--s-2) var(--s-3);flex-wrap:wrap;padding:10px 14px;border:1px solid var(--borda);border-radius:var(--r-2);background:rgba(23,15,18,.55)}
 .rt-cab b{font:var(--w-forte) var(--t-lg)/1.1 var(--disp);overflow-wrap:anywhere;min-width:0}
 .rt-cab>span{font-size:var(--t-sm);color:var(--texto-mudo)}

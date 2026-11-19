@@ -919,6 +919,7 @@ function renderContas(animar){
         <button class="mini-btn" type="button" data-conta-add>+ Conta</button></div>
       ${lista}
     </div>
+    ${filaPerfilHTML(nomeC)}
     ${fmts.length?`<div class="fmt-lista"><h4>Formatos de ${esc(nomeC)}</h4><ul>${fmts.map(f=>{const st=statsFormato(f).st;
       return `<li><b>${esc(f.nome)}</b><span class="fst ${st}">${FST[st][0]}</span></li>`;}).join("")}</ul><button class="link" type="button" data-ir="metas">Ver em Metas</button></div>`:""}
     <div class="novo-canal">
@@ -929,6 +930,27 @@ function renderContas(animar){
   const k=canal+"|"+html; if(k===contasVisto) return; const mudouCanal=!contasVisto.startsWith(canal+"|"); contasVisto=k;
   box.innerHTML=html; if(animar||mudouCanal) stagger(box);
 }
+/* fila do perfil: o que está na esteira deste canal (nunca postado), na ordem da esteira */
+const ORDEM_FILA=["roteiro","edicao","avaliador","aguardando","aprovado","agendado"];
+function filaPerfilHTML(nomeC){
+  const its=videos.filter(v=>v.channel===canal&&etapa(v)!=="postado")
+    .sort((a,b)=>ORDEM_FILA.indexOf(etapa(a))-ORDEM_FILA.indexOf(etapa(b))||quando(b)-quando(a));
+  const posts=videos.filter(v=>v.channel===canal&&etapa(v)==="postado").sort((a,b)=>quando(b)-quando(a)).slice(0,3);
+  const card=v=>{const e=etapa(v), ag=agendaDe(v.id).filter(s=>new Date(s.scheduled_at)>=new Date()).sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at))[0];
+    return `<li><button type="button" class="fp-item" data-fila="${esc(v.id)}">
+      <span class="t">${esc(v.title||"Sem título ainda")}</span>
+      <span class="m">${v.episode?`<span>${esc(v.episode)}</span>`:""}<span class="et ${e}">${esc(ETIQ[e]||e)}</span>${e!=="postado"?`<span class="${v.roteiro_md?"ok":""}">${v.roteiro_md?"roteiro ✓":"sem roteiro"}</span><span class="${v.preview_path?"ok":""}">${v.preview_path?"vídeo ✓":"sem vídeo"}</span>`:""}${ag?`<span class="ag">${esc(PLAT[ag.platform]||ag.platform)} · ${esc(fmtData(ag.scheduled_at))}</span>`:""}</span></button></li>`;};
+  return `<div class="fila-perfil"><h4>Fila de ${esc(nomeC)}</h4>
+    ${its.length?`<ul class="fp-lista">${its.map(card).join("")}</ul>`:`<p class="nota">Nada na fila deste canal no painel agora.</p>`}
+    ${posts.length?`<h5>Últimos postados</h5><ul class="fp-lista fp-post">${posts.map(card).join("")}</ul>`:""}</div>`;
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-fila]"); if(!b) return;
+  const v=videos.find(x=>x.id===b.dataset.fila); if(!v) return;
+  const et=etapa(v);
+  if(et==="roteiro"||(!v.preview_path&&et!=="postado")){ rtSel[canal]=v.id; rtLinhaAberta=null; irAba("roteiro"); return; }
+  selId[canal]=v.id; $("#coment").value=""; aviso(""); renderFila(); irAba("desenho");
+});
 /* "+ Conta" leva ao formulário que já existe em Números › Adicionar conta, com o canal escolhido */
 document.addEventListener("click",e=>{
   if(!e.target.closest("[data-conta-add]")) return;
@@ -946,6 +968,13 @@ document.addEventListener("click",e=>{
    comentário por linha vai pra hs3d_script_comments. O Mac entrega tudo em painel/ROTEIRO_PAINEL.md.
    Sem a v8: modo antigo (só título/trecho do NOTAS.md, ideia = pedido de ajuste, aprovar/comentar desligados). */
 function roteirosDe(ch){ return videos.filter(v=>v.channel===ch&&v.status!=="postado"&&etapa(v)==="roteiro"); }
+/* tudo que tem roteiro (inclusive postado, só leitura) ou está em roteiro/sem vídeo: roteiro › outros na fila › postados, mais recente primeiro */
+function quando(v){ return +new Date(v.roteiro_at||v.produced_at||0); }
+function itensRoteiro(ch){
+  const g=v=>{const e=etapa(v); return e==="roteiro"?0:e==="postado"?2:1;};
+  return videos.filter(v=>v.channel===ch&&(v.roteiro_md||trechoRoteiro(v.notes_md)||etapa(v)==="roteiro"||(!v.preview_path&&v.status!=="postado")))
+    .sort((a,b)=>g(a)-g(b)||quando(b)-quando(a));
+}
 /* trecho "## Roteiro" do NOTAS.md, se houver: só o que o Mac sincronizou */
 function trechoRoteiro(md){
   const ls=String(md||"").split(/\r?\n/), i=ls.findIndex(l=>/^#{1,4}\s*.*roteiro/i.test(l));
@@ -971,8 +1000,7 @@ function aprovacaoRoteiro(it){
 function renderRoteiro(animar){
   const box=$("#roteiroBox"); if(!box||aba!=="roteiro"&&!animar) return;
   if(!carregouUmaVez){ box.innerHTML=skel(2); return; }
-  let its=roteirosDe(canal);
-  if(!its.length){ const semVideo=videos.filter(v=>v.channel===canal&&!v.preview_path&&v.status!=="postado"); if(semVideo.length) its=[semVideo[0]]; }
+  const its=itensRoteiro(canal);
   if(!its.length){
     const h=`<p class="vazio-mini rt-vazio"><b>Nenhum roteiro em andamento em ${esc(CANAL[canal]||canal)}</b>Quando o Roteirista começar um episódio, ele aparece aqui.<button class="btn sm fantasma" type="button" data-ir="novo" data-novo="nova">Escrever do zero</button></p>`;
     if(roteiroVisto!==h){ roteiroVisto=h; rtVistoId=null; box.innerHTML=h; stagger(box); } return;
@@ -989,7 +1017,8 @@ function renderRoteiro(animar){
   const porLinha={}; coms.forEach(c=>{(porLinha[c.linha]=porLinha[c.linha]||[]).unshift(c);});
   const ds=decisoes.filter(d=>d.video_id===it.id&&d.comment&&(v8?d.decision==="ideia_roteiro"||d.decision==="ajuste":true));
   const ap=v8?aprovacaoRoteiro(it):null;
-  const podeComentar=v8&&!!doMac;
+  const postado=e==="postado";  // já postado: só leitura
+  const podeComentar=v8&&!!doMac&&!postado;
   if(rtLinhaAberta&&(rtLinhaAberta.id!==it.id||!podeComentar||rtLinhaAberta.n>(doMac||[]).length)) rtLinhaAberta=null;
   const fonte=doMac?`${esc(it.roteiro_fonte||"roteiro")}${it.roteiro_at?" · salvo no Mac "+esc(fmtData(it.roteiro_at)):""}`:"Trecho “Roteiro” do NOTAS.md do episódio.";
   const semTexto=v8?`<p class="rt-sem">O Mac ainda não achou o arquivo de roteiro deste episódio. Assim que o Roteirista salvar o <code>roteiro.txt</code> na pasta do episódio, o texto inteiro aparece aqui (em até 2 min).</p>`
@@ -998,12 +1027,13 @@ function renderRoteiro(animar){
     return `<li class="${cs.length?"tem-com":""}${aberta?" aberta":""}"><span>${esc(l)}</span>${podeComentar?`<button type="button" class="rt-lc" data-ln="${n}" aria-expanded="${aberta}" aria-label="Comentar a linha ${n}${cs.length?` (${cs.length} comentário${cs.length>1?"s":""})`:""}" title="Comentar esta linha">${ICON_COM}${cs.length?`<b>${cs.length}</b>`:""}</button>`:""}
       ${cs.length?`<div class="rt-lcoms">${cs.map(c=>`<p><small>você · ${esc(fmtData(c.created_at))}${c.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(c.comentario)}</p>`).join("")}</div>`:""}
       ${aberta?`<div class="rt-lform"><label class="sr" for="rtC${n}">Comentário da linha ${n}</label><textarea id="rtC${n}" class="rt-ctxt" maxlength="2000" placeholder="O que mudar nesta linha?">${esc(rascLinha)}</textarea><div><button type="button" class="btn sm meio" data-lenviar="${n}">Comentar linha ${n}</button><button type="button" class="btn sm fantasma" data-lfechar>Cancelar</button></div></div>`:""}</li>`; };
-  const btnAprovar=!v8
+  const btnAprovar=postado?`<button class="btn sm" type="button" disabled title="Episódio já postado: só leitura">Aprovar roteiro</button>`
+    :!v8
     ?`<button class="btn sm" type="button" disabled title="Falta rodar a migration_v8_roteiro.sql no Supabase. “Aprovar” do vídeo significaria aprovado para postar, por isso aqui fica desligado.">Aprovar roteiro <span class="selo fila">em breve</span></button>`
     :ap&&!ap.mudou?`<button class="btn sm" type="button" id="rtAprovar" disabled>Roteiro aprovado ✓ <span class="selo voce">${esc(fmtData(ap.d.created_at))}</span></button>`
     :`<button class="btn sm" type="button" id="rtAprovar"${doMac?"":` disabled title="Aprovar fica disponível quando o texto do roteiro chegar do Mac."`}>${ap?"Aprovar nova versão do roteiro":"Aprovar roteiro"}</button>`;
-  const h=`${its.length>1?`<div class="chips rt-itens" role="group" aria-label="Episódio em roteiro">${its.map(v=>`<button type="button" data-rt="${esc(v.id)}" aria-pressed="${v.id===it.id}">${esc(v.episode||v.title)}</button>`).join("")}</div>`:""}
-    <div class="rt-cab"><b>${esc(it.title||"Sem título ainda")}</b>${it.episode?`<span>${esc(it.episode)}</span>`:""}<span class="selo ${e==="roteiro"?"voce":"fila"}">${esc(ETIQ[e]||e)}</span>
+  const h=`${its.length>1?`<div class="chips rt-itens" role="group" aria-label="Episódios com roteiro">${its.map(v=>`<button type="button" data-rt="${esc(v.id)}" aria-pressed="${v.id===it.id}">${esc(v.episode||v.title)}${etapa(v)==="postado"?" · postado":""}</button>`).join("")}</div>`:""}
+    <div class="rt-cab"><b>${esc(it.title||"Sem título ainda")}</b>${it.episode?`<span>${esc(it.episode)}</span>`:""}<span class="selo ${e==="roteiro"?"voce":"fila"}${postado?" postado":""}">${esc(ETIQ[e]||e)}</span>
       ${ap?`<span class="selo ${ap.mudou?"fila":"voce"}">${ap.mudou?"roteiro mudou depois da aprovação":"roteiro aprovado"}</span>`:""}
       ${it.stage_note?`<p class="rt-nota">${esc(it.stage_note)}</p>`:""}</div>
     <div class="rt-cols">
@@ -1011,21 +1041,21 @@ function renderRoteiro(animar){
         <header><span class="av ag" aria-hidden="true">R</span><b>${doMac?"Roteiro":"Rascunho do roteirista"}</b><small>${doMac&&it.roteiro_at?esc(fmtData(it.roteiro_at)):it.produced_at?esc(fmtData(it.produced_at)):"agente"}</small></header>
         ${linhas?`<ol class="rasc${podeComentar?" comentavel":""}">${linhas.map(li).join("")}</ol><p class="nota rt-fonte">${fonte}</p>`:semTexto}
         ${podeComentar?`<p class="rt-embreve">${ICON_COM} Toque no balão de uma linha pra comentar só ela.${coms.length?` · ${coms.length} comentário${coms.length>1?"s":""}`:""}</p>`
-          :v8?"":`<p class="rt-embreve"><span class="selo fila">em breve</span> Comentar linha a linha</p>`}
+          :postado?"":v8?"":`<p class="rt-embreve"><span class="selo fila">em breve</span> Comentar linha a linha</p>`}
       </div>
       <div class="rt-col">
         <header><span class="av vc" aria-hidden="true">V</span><b>Suas ideias e ajustes</b><small>só você edita</small></header>
         <div class="ideias">
           <label class="sr" for="rtIdeia">Sua ideia para o roteirista</label>
-          <textarea id="rtIdeia" maxlength="2000" placeholder="Ex.: começa com o relógio na tela; mais tensão antes da virada">${esc(rascunho)}</textarea>
-          ${v8?`<p class="nota">Vai como <b>ideia pro Roteirista</b> de “${esc(it.title||it.episode||"este episódio")}”. O item continua no roteiro, não volta pra edição.</p>`
+          <textarea id="rtIdeia" maxlength="2000"${postado?" disabled":""} placeholder="Ex.: começa com o relógio na tela; mais tensão antes da virada">${esc(rascunho)}</textarea>
+          ${postado?`<p class="nota rt-so-leitura">Episódio já postado: só leitura</p>`:v8?`<p class="nota">Vai como <b>ideia pro Roteirista</b> de “${esc(it.title||it.episode||"este episódio")}”. O item continua no roteiro, não volta pra edição.</p>`
             :`<p class="nota">Vira um <b>pedido de ajuste</b> de “${esc(it.title||it.episode||"este episódio")}”: o Hermes entrega o comentário aos agentes e o item volta para edição.</p>`}
           ${ds.map(d=>`<div class="coment"><em>${d.decision==="ideia_roteiro"?"I":d.decision==="ajuste"?"A":d.decision==="reprovado"?"R":"✓"}</em><div><small>você · ${esc(DEC[d.decision]||d.decision)} · ${esc(fmtData(d.created_at))}${d.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(d.comment)}</div></div>`).join("")}
         </div>
       </div>
     </div>
     <div class="rt-acoes">
-      <button class="btn meio sm" type="button" id="rtEnviar">Enviar ideia pro roteirista</button>
+      <button class="btn meio sm" type="button" id="rtEnviar"${postado?' disabled title="Episódio já postado: só leitura"':""}>Enviar ideia pro roteirista</button>
       ${btnAprovar}
       <button class="btn fantasma sm" type="button" data-ir="novo" data-novo="nova">Escrever do zero</button>
       <p class="aviso" id="rtMsg" role="status"></p>
@@ -1042,7 +1072,7 @@ function erroV8(error){
 $("#roteiroBox").addEventListener("click",async e=>{
   const c=e.target.closest("[data-rt]"); if(c){ rtSel[canal]=c.dataset.rt; rtLinhaAberta=null; renderRoteiro(true); return; }
   const it=videos.find(v=>v.id===rtSel[canal]), msg=$("#rtMsg");
-  if(!it) return;
+  if(!it||etapa(it)==="postado") return;  // postado: só leitura
   /* comentar linha */
   const lc=e.target.closest(".rt-lc");
   if(lc){ const n=+lc.dataset.ln, t0=$(".rt-ctxt"); if(t0&&rtLinhaAberta?.n!==n) t0.value=""; rtLinhaAberta=(rtLinhaAberta&&rtLinhaAberta.n===n&&rtLinhaAberta.id===it.id)?null:{id:it.id,n};
