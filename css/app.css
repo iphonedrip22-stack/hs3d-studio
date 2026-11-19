@@ -830,3 +830,36 @@ a.h{text-decoration:none;border-bottom:1px dotted var(--borda-forte);justify-sel
   .btn:hover,.num-card:hover,.hm-canal:hover,.rail button:active,.rail svg,.ver-tudo::after{transform:none!important}
   .anel circle.v{transition:none}
 }
+
+/* ---------- postados (home/Hoje) e calendário compacto da fila ---------- */
+.hm-slots .post-tag,.hm-slots .ag-tag{font-style:normal;font-size:11px;padding:1px 6px;border-radius:999px;margin-left:4px;white-space:nowrap}
+.hm-slots .post-tag{background:rgba(165,214,160,.16);color:var(--ok)}
+.hm-slots .ag-tag{background:rgba(255,255,255,.08);color:var(--fosco)}
+.hm-slots .cheio:not(.postado) .pt{background:transparent;border:2px solid var(--ok);box-shadow:none}
+.p-cal .painel-topo{margin-bottom:6px}
+.cal-mini{font-size:12px;line-height:1.25}
+.cal-lista{display:grid;gap:3px;max-height:220px;overflow:auto;overscroll-behavior:contain;margin:0;padding:0;list-style:none}
+.cal-lista li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;align-items:start;padding:3px 6px;border-radius:8px}
+.cal-lista li.hj{background:rgba(255,255,255,.05)}
+.cal-lista li.vazio{opacity:.55}
+.cal-lista .cal-prontos{border-bottom:1px dashed var(--borda);padding-bottom:6px;margin-bottom:2px}
+.cal-d{display:flex;flex-direction:column}
+.cal-d b{font:var(--w-forte) 13px/1.15 var(--disp);font-variant-numeric:tabular-nums}
+.cal-d small{color:var(--fosco);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.cal-its{display:flex;flex-wrap:wrap;gap:3px 4px;min-width:0;align-items:center}
+.cal-its em{color:var(--fosco);font-style:normal}
+.cal-h{font-variant-numeric:tabular-nums;color:var(--fosco);font-size:11px}
+.cal-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:1px 7px 1px 5px;border-radius:999px;border:1px solid var(--borda);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.cal-chip i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--cor,var(--fosco))}
+.cal-chip.curioso{--cor:var(--curioso)}.cal-chip.zeca{--cor:var(--zeca)}
+.cal-chip.ag{border-style:solid;background:rgba(255,255,255,.04)}
+.cal-chip.pr{border-style:dashed}
+.cal-leg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 0;opacity:.8}
+.cal-leg .cal-chip{font-size:10px}
+.cal-aprovar{font-size:11px}
+@media (max-width:640px){.cal-lista{max-height:none}.cal-lista li{grid-template-columns:46px minmax(0,1fr)}}
+
+/* calendário: postado hoje (cheio, cor de info) e previsto (pontilhado) */
+.cal-chip.po{background:color-mix(in srgb,var(--info) 18%,transparent);border-color:color-mix(in srgb,var(--info) 55%,transparent)}
+.cal-chip.pv{border-style:dotted;opacity:.85}

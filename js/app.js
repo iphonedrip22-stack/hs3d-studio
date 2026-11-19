@@ -32,7 +32,7 @@ if(!window.supabase||!cfg.supabaseUrl){bootErr("Não carreguei a biblioteca do S
 const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:"hs3d-studio-auth"}});
 
-let videos=[],decisoes=[],agenda=[],metas=[],metasKv=null,formatos=[],v6=null,canal="curioso",selId={curioso:null,zeca:null};
+let postsVid=[],videos=[],decisoes=[],agenda=[],metas=[],metasKv=null,formatos=[],v6=null,canal="curioso",selId={curioso:null,zeca:null};
 let semTabelas=false, v2=null, carregouUmaVez=false, telaAtual="fila";
 let comentRot=[], v8=false; /* v8: migration_v8_roteiro.sql (roteiro_md + hs3d_script_comments + decisões de roteiro) */
 const urlCache={};
@@ -49,7 +49,7 @@ function mostrarLogin(){ $("#app").hidden=true; $("#tela-login").classList.add("
 function mostrarApp(session){
   $("#tela-login").classList.remove("on"); $("#app").hidden=false;
   $("#quem").textContent=session?.user?.email||"";
-  carregarTudo(); carregarNumeros();
+  carregarTudo(); carregarNumeros(); ligarRealtime();
 }
 $("#fLogin").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -144,13 +144,15 @@ async function carregarTudo(){
       $("#vazio").hidden=false;
       $("#vazio").textContent=semTabelas?"As tabelas do painel ainda não foram criadas no Supabase (falta colar o schema.sql no SQL Editor).":"Erro ao carregar a fila: "+r.error.message; }
     else { semTabelas=false; videos=r.data||[]; }
-    const [d,a,m,k,fm,sc]=await Promise.all([
+    const [d,a,m,k,fm,sc,pv]=await Promise.all([
       sb.from("hs3d_decisions").select("*").order("created_at",{ascending:false}).limit(1000),
       sb.from("hs3d_schedule").select("*").order("scheduled_at",{ascending:true}).limit(500),
       sb.from("hs3d_metas").select("*").order("ordem",{ascending:true}).order("created_at",{ascending:true}),
       sb.from("hs3d_kv").select("*").eq("key","metas").maybeSingle(),
       sb.from("hs3d_formats").select("*"),
-      sb.from("hs3d_script_comments").select("*").order("created_at",{ascending:false}).limit(1000)]);
+      sb.from("hs3d_script_comments").select("*").order("created_at",{ascending:false}).limit(1000),
+      /* postados de verdade: vídeos que a coleta (agentes nos portais + números públicos) achou nas redes */
+      sb.from("hs3d_stats").select("channel,platform,source,video_ref,video_title,video_date,captured_at").eq("scope","video").order("captured_at",{ascending:true}).limit(10000)]);
     decisoes=d.error?[]:(d.data||[]);
     mostrarAlerta();
     v2=!(faltaTabela(a.error)||faltaTabela(m.error));
@@ -160,12 +162,14 @@ async function carregarTudo(){
     v6=!fm.error; formatos=fm.error?[]:(fm.data||[]);
     /* v8 só liga com a tabela nova E a coluna roteiro_md; sem migration a aba volta ao modo antigo */
     comentRot=sc.error?[]:(sc.data||[]);
+    if(!pv.error){ postsVid=pv.data||[]; postadosCache=null; }
     v8=!sc.error&&!semTabelas&&(!videos.length||Object.prototype.hasOwnProperty.call(videos[0],"roteiro_md"));
     $("#faixaV2").hidden=v2||semTabelas;
     $("#faixaV2").textContent="Falta rodar o migration_v2.sql no Supabase (projeto hs3d › SQL Editor). Até lá: metas, agenda e “Criar do zero” ficam só para leitura.";
   } finally { carregando=false; carregouUmaVez=true; $("#skFila").hidden=true; }
-  renderFila(); renderHojeMini();
+  renderFila(); renderHojeMini(); renderCalMini();
   if(telaAtual==="hoje") renderHoje();
+  if(telaAtual==="metas") atualizarProgressoMetas();
 }
 async function assinar(path){
   const c=urlCache[path]; if(c&&c.exp>Date.now()) return c.url;
@@ -193,7 +197,7 @@ function etapa(v){
     else if(!v.preview_path) e="edicao";
     else e=(v.avaliador_md||"").trim()?"aguardando":"avaliador";
   }
-  if(e==="aprovado"&&agendaDe(v.id).length) e="agendado";
+  if(e==="aprovado"&&agendaDe(v.id).some(s=>new Date(s.scheduled_at)>=new Date())) e="agendado"; // "Agendado" só com horário que ainda vai chegar
   return e;
 }
 function stepperHTML(v){
@@ -389,8 +393,65 @@ function canaisComMeta(){
   ["curioso","zeca"].forEach(k=>{ if(!m.has(k)) m.set(k,{nome:CANAL[k],metas:[]}); });
   return m;
 }
-function minutos(h){const [a,b]=h.split(":").map(Number);return a*60+(b||0);}
+function minutos(h){if(!/^\d/.test(h||"")) return 1439;const [a,b]=h.split(":").map(Number);return a*60+(b||0);}
 function agoraMinSP(){ return minutos(new Date().toLocaleTimeString("en-GB",{timeZone:TZ,hour:"2-digit",minute:"2-digit"})); }
+/* ---------- POSTADOS (fonte única para Hoje, home, Fila e Metas) ----------
+   Um vídeo conta como postado num dia quando:
+   1) está "postado" no painel: dia e hora vêm da nota da Postagem ("Postado 19/11/2026 14:52 …");
+      sem essa nota, vale o dia do agendamento (hs3d_schedule); ou
+   2) a coleta achou o post na rede (hs3d_stats, scope=video) com a data do post (video_date, lida nos portais);
+      sem data, vale o dia em que ele APARECEU pela 1ª vez na coleta (só para posts que surgiram depois da
+      1ª coleta daquela conta). Posts da coleta que são o mesmo link de um vídeo do painel não contam 2 vezes.
+   Como o mesmo episódio vai pras 3 redes, a parte da coleta conta a rede com MAIS posts no dia (não soma). */
+let postadosCache=null;
+function refPost(r){
+  const t=String(r||"");
+  const m=t.match(/(?:shorts\/|watch\?v=|youtu\.be\/)([\w-]{6,})/)||t.match(/\/(?:reel|p)\/([\w-]+)/)||t.match(/\/video\/(\d+)/);
+  return m?m[1]:t.replace(/[?#].*$/,"").replace(/\/+$/,"");
+}
+/* lê "Postado 19/11/2026 14:52" / "Postado 18/11 22:40" da nota do vídeo */
+function quandoPostou(v){
+  const m=String(v.stage_note||"").match(/postad[oa]\s+(?:em\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?(?:,?\s*(?:às\s*)?(\d{1,2})[:h](\d{2}))?/i);
+  if(!m) return null;
+  const ano=m[3]||hojeSP().slice(0,4), dia=`${ano}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  return {dia,hora:m[4]?`${m[4].padStart(2,"0")}:${m[5]}`:""};
+}
+function postadosIndex(){
+  if(postadosCache) return postadosCache;
+  const dias={}; // canal -> dia -> {painel:[...], plats:{plat:[...]}}
+  const no=(c,d)=>((dias[c]=dias[c]||{})[d]=dias[c][d]||{painel:[],plats:{}});
+  const refsPainel=new Set();
+  videos.filter(v=>v.status==="postado").forEach(v=>{
+    (String(v.stage_note||"").match(/https?:\/\/\S+/g)||[]).forEach(u=>refsPainel.add(v.channel+"|"+refPost(u)));
+    const q=quandoPostou(v);
+    const ds=q?[q.dia]:[...new Set(agenda.filter(s=>s.video_id===v.id).map(s=>diaSP(s.scheduled_at)))];
+    ds.forEach(d=>no(v.channel,d).painel.push({titulo:v.title||v.id,aprox:false,id:v.id,hora:q?q.hora:""}));
+  });
+  const base={}, porRef={};
+  postsVid.forEach(x=>{
+    const kp=x.channel+"|"+x.platform; if(!(kp in base)) base[kp]=x.captured_at;
+    const ref=refPost(x.video_ref); if(refsPainel.has(x.channel+"|"+ref)) return;
+    const k=kp+"|"+ref;
+    const o=porRef[k]||(porRef[k]={canal:x.channel,plat:x.platform,titulo:"",dia:"",primeiro:x.captured_at,kp});
+    if(x.video_title) o.titulo=x.video_title;
+    if(x.video_date&&!o.dia) o.dia=String(x.video_date).slice(0,10);
+  });
+  Object.values(porRef).forEach(o=>{
+    let d=o.dia, aprox=false;
+    if(!d&&new Date(o.primeiro)-new Date(base[o.kp])>30*60000){ d=diaSP(o.primeiro); aprox=true; }
+    if(d){ const a=no(o.canal,d).plats; (a[o.plat]=a[o.plat]||[]).push({titulo:o.titulo||"(sem título)",aprox,hora:""}); }
+  });
+  return postadosCache=dias;
+}
+/* lista dos vídeos postados de um canal num dia: os do painel + os só vistos pela coleta (rede com mais posts) */
+function postadosDoDia(canal,dia){
+  const a=(postadosIndex()[canal]||{})[dia]; if(!a) return [];
+  const extra=Object.values(a.plats).sort((x,y)=>y.length-x.length)[0]||[];
+  return [...a.painel.slice().sort((x,y)=>minutos(x.hora)-minutos(y.hora)),...extra];
+}
+const contarPostados=(canal,dia)=>postadosDoDia(canal,dia).length;
+const postadosNaSemana=canal=>[...diasDaSemanaSP()].reduce((s,d)=>s+contarPostados(canal,d),0);
+
 /* um registro por canal: horários da meta casados com a agenda de hoje (usado pela aba Hoje e pelo painel da home) */
 function dadosHoje(){
   const hoje=hojeSP();
@@ -407,12 +468,22 @@ function dadosHoje(){
     });
     Object.keys(porHora).filter(x=>!usados.has(x)).forEach(h=>slots.push({h,its:porHora[h],meta:false}));
     slots.sort((a,b)=>minutos(a.h)-minutos(b.h));
-    return {k,nome:c.nome,ehCanalVideo:k in CANAL,slots,meta,feitos:new Set(ag.map(s=>s.video_id)).size,
+    /* postados de hoje ocupam os horários: primeiro os que já casam com o agendamento, depois na ordem do dia */
+    const posts=postadosDoDia(k,hoje).slice(), restantes=[];
+    posts.forEach(p=>{ const s=p.id&&slots.find(x=>!x.post&&x.its.some(i=>i.video_id===p.id)); if(s) s.post=p; else restantes.push(p); });
+    /* sem agendamento: vai pro horário da meta em que foi postado (o último horário até 1 h depois da hora do post);
+       sem hora conhecida, pro 1º horário livre; sobrando, aparece como extra "além dos horários da meta" */
+    restantes.forEach(p=>{
+      const livres=slots.filter(x=>!x.post&&x.meta);
+      const s=(p.hora&&livres.filter(x=>minutos(x.h)<=minutos(p.hora)+60).pop())||livres[0];
+      if(s) s.post=p; else slots.push({h:p.hora||"—",its:[],meta:false,post:p,semHora:true});
+    });
+    return {k,nome:c.nome,ehCanalVideo:k in CANAL,slots,meta,feitos:posts.length,
       produzidos:videos.filter(v=>v.channel===k&&diaSP(v.produced_at)===hoje).length};
   });
 }
 const reguaHTML=(slots,agoraMin,vivo)=>`<div class="regua${vivo?" vivo":""}" aria-hidden="true"><span class="agora" style="--x:${agoraMin/1440}"></span>${
-  slots.map(s=>`<i class="${s.its.length?"cheio":"vago"}" style="--x:${minutos(s.h)/1440}" title="${esc(s.h)}"></i>`).join("")}<em style="--x:0">0h</em><em style="--x:.25">6h</em><em style="--x:.5">12h</em><em style="--x:.75">18h</em></div>`;
+  slots.filter(s=>!s.semHora).map(s=>`<i class="${s.post||s.its.length?"cheio":"vago"}" style="--x:${minutos(s.h)/1440}" title="${esc(s.h)}"></i>`).join("")}<em style="--x:0">0h</em><em style="--x:.25">6h</em><em style="--x:.5">12h</em><em style="--x:.75">18h</em></div>`;
 function renderHoje(){
   const box=$("#hoje"), agoraMin=agoraMinSP();
   $("#hojeTitulo").textContent="Hoje, "+new Date().toLocaleDateString("pt-BR",{timeZone:TZ,weekday:"long",day:"2-digit",month:"2-digit"});
@@ -428,17 +499,20 @@ function renderHoje(){
       const passou=minutos(s.h)<agoraMin;
       const v=s.its.length?videos.find(x=>x.id===s.its[0].video_id):null;
       const pl=s.its.map(x=>PLAT[x.platform]||x.platform).join(" · ");
+      if(s.post) return `<li class="slot2 cheio postado ${passou?"passou":""}">
+        <b class="hh">${esc(s.h)}</b><span class="pt"></span>
+        <span class="tx"><strong>${esc(s.post.titulo)}</strong><small>postado hoje${s.post.hora?" às "+esc(s.post.hora):""}${s.semHora?" · além dos horários da meta":""}${s.post.aprox?" · visto pela coleta":""}</small></span></li>`;
       return `<li class="slot2 ${s.its.length?"cheio":"vago"} ${passou?"passou":""}">
         <b class="hh">${esc(s.h)}</b><span class="pt"></span>
-        <span class="tx">${v?`<strong>${esc(v.title)}</strong><small>${esc(pl)}${s.meta?"":" · fora dos horários da meta"}${v.status==="postado"?" · postado":""}</small>`
-          :`<strong>Vago</strong><small>${passou?"horário já passou sem vídeo agendado":"nenhum vídeo agendado ainda"}</small>`}</span></li>`;}).join("");
+        <span class="tx">${v?`<strong>${esc(v.title)}</strong><small>${passou?"agendado, ainda não apareceu como postado":"agendado"} · ${esc(pl)}${s.meta?"":" · fora dos horários da meta"}</small>`
+          :`<strong>Vago</strong><small>${passou?"horário já passou sem vídeo postado":"nenhum vídeo postado ou agendado ainda"}</small>`}</span></li>`;}).join("");
     return `<div class="dia-canal ${k}">
       <div class="dc-topo"><h2>${esc(nome)}</h2>
-        <span class="placar"><b>${feitos}</b>/${meta||"–"} <small>agendados hoje</small></span>
+        <span class="placar"><b>${feitos}</b>/${meta||"–"} <small>postados hoje</small></span>
         ${ehCanalVideo?`<span class="placar"><b>${produzidos}</b> <small>produzidos hoje</small></span>`:""}</div>
       ${reguaHTML(slots,agoraMin)}
       ${slots.length?`<ol class="slots2">${linhas}</ol>`:`<p class="nota">Sem horários na meta. <button class="link" data-ir="metas">Definir na aba Metas</button></p>`}
-      ${(meta&&feitos<meta)?`<p class="falta">Faltam ${meta-feitos} vídeo(s) agendado(s) para bater a meta de hoje.</p>`:""}
+      ${(meta&&feitos<meta)?`<p class="falta">Faltam ${meta-feitos} vídeo(s) postado(s) para bater a meta de hoje.</p>`:""}
     </div>`;
   }).join("");
   box.innerHTML=html; stagger(box);
@@ -455,28 +529,79 @@ function renderHojeMini(){
     box.innerHTML=`<p class="vazio-mini"><b>Agenda desligada</b>A linha do tempo liga depois do migration_v2.sql.${rows.length?" Metas do METAS.md: "+rows.map(r=>esc(r.canal)+" "+esc(r.horarios)).join(" · "):""}</p>`;
     return;
   }
-  const semana=diasDaSemanaSP(), ANEL=113.1;
+  const ANEL=113.1;
   box.innerHTML=dadosHoje().map(({k,nome,slots,meta,feitos})=>{
-    const proxima=slots.find(s=>minutos(s.h)>=agoraMin);
+    const proxima=slots.find(s=>!s.semHora&&minutos(s.h)>=agoraMin);
     const linhas=slots.map(s=>{
       const passou=minutos(s.h)<agoraMin;
       const v=s.its.length?videos.find(x=>x.id===s.its[0].video_id):null;
-      return `<li class="${s.its.length?"cheio":"vago"}${passou?" passou":""}${s===proxima?" agora":""}"><b>${esc(s.h)}</b><span class="pt"></span><span class="tx">${v?esc(v.title):s.its.length?"Agendado":passou?"Vago, já passou":"Vago"}${s===proxima?` <em class="agora-tag">próximo</em>`:""}</span></li>`;}).join("");
+      const txt=s.post?`${esc(s.post.titulo)} <em class="post-tag">postado${s.post.hora?" "+esc(s.post.hora):""}</em>`:v?`${esc(v.title)} <em class="ag-tag">${passou?"não saiu":"agendado"}</em>`:s.its.length?(passou?"Agendado, não saiu":"Agendado"):passou?"Vago, já passou":"Vago";
+      return `<li class="${s.post||s.its.length?"cheio":"vago"}${s.post?" postado":""}${passou?" passou":""}${s===proxima?" agora":""}"><b>${esc(s.h)}</b><span class="pt"></span><span class="tx">${txt}${s===proxima&&!s.post?` <em class="agora-tag">próximo</em>`:""}</span></li>`;}).join("");
     const ms=metasDoCanal(k), hs=[...new Set(ms.flatMap(m=>m.horarios||[]))].sort();
-    const sem=new Set(agenda.filter(x=>x.channel===k&&semana.has(diaSP(x.scheduled_at))).map(x=>x.video_id)).size;
+    const sem=postadosNaSemana(k);
     const fila=videos.filter(v=>v.channel===k&&v.status==="aprovado").length;
     const pct=meta?Math.min(1,feitos/meta):0;
     return `<div class="hm-canal ${esc(k)}">
       <div class="hm-topo"><div><h3>${esc(nome)}</h3><small>${meta?`meta: ${meta} por dia${hs.length?" · "+esc(hs.join(", ")):""}`:"sem meta diária"}</small></div>
-        <span class="anel-m" role="img" aria-label="${feitos} de ${meta||0} agendados hoje"><svg viewBox="0 0 46 46" aria-hidden="true"><circle class="f" cx="23" cy="23" r="18"/><circle class="v" cx="23" cy="23" r="18" data-o="${(ANEL*(1-pct)).toFixed(1)}" style="stroke-dashoffset:${hojeMiniVisto?(ANEL*(1-pct)).toFixed(1):ANEL}"/></svg><b>${feitos}/${meta||"–"}</b></span></div>
+        <span class="anel-m" role="img" aria-label="${feitos} de ${meta||0} postados hoje"><svg viewBox="0 0 46 46" aria-hidden="true"><circle class="f" cx="23" cy="23" r="18"/><circle class="v" cx="23" cy="23" r="18" data-o="${(ANEL*(1-pct)).toFixed(1)}" style="stroke-dashoffset:${hojeMiniVisto?(ANEL*(1-pct)).toFixed(1):ANEL}"/></svg><b>${feitos}/${meta||"–"}</b></span></div>
       ${slots.length?`<ol class="hm-slots">${linhas}</ol>`:`<p class="vazio-mini"><b>Sem horários na meta</b><button class="link" data-ir="metas">Definir em Metas</button></p>`}
       <div class="metas-l">
-        <div><span>Semana</span><b>${sem} de ${meta?meta*7:"–"} agendados</b><span class="bar" style="--p:${meta?Math.min(1,sem/(meta*7)).toFixed(3):0}"><i></i></span></div>
+        <div><span>Semana</span><b>${sem} de ${meta?meta*7:"–"} postados</b><span class="bar" style="--p:${meta?Math.min(1,sem/(meta*7)).toFixed(3):0}"><i></i></span></div>
         <div title="Aprovados por você e ainda não postados. A barra mostra quanto da meta da semana eles cobrem."><span>Fila aprovada</span><b>${fila} vídeo${fila===1?"":"s"}</b><span class="bar" style="--p:${meta?Math.min(1,fila/(meta*7)).toFixed(3):0}"><i></i></span></div>
       </div>
     </div>`;}).join("");
   if(!hojeMiniVisto){ hojeMiniVisto=true; stagger(box); }
   requestAnimationFrame(()=>requestAnimationFrame(()=>$$("#hojeMini .anel-m .v").forEach(c=>c.style.strokeDashoffset=c.dataset.o)));
+}
+/* Metas: atualiza só o "Hoje x/y postados" de cada cartão, sem redesenhar o formulário (não atrapalha quem edita) */
+function atualizarProgressoMetas(){
+  const hoje=hojeSP();
+  $$("#metas .progresso-mini[data-pcanal]").forEach(el=>{
+    const b=el.querySelector("b"), n=contarPostados(el.dataset.pcanal,hoje), txt=`${n}/${el.dataset.pordia||"–"}`;
+    if(b&&b.textContent!==txt){ b.textContent=txt; pulso(b); }
+  });
+}
+/* Calendário compacto da home: vídeos PRONTOS (aprovados, ainda sem data) e AGENDADOS (hs3d_schedule), por dia */
+function renderCalMini(){
+  const box=$("#calMini"); if(!box) return;
+  if(!carregouUmaVez) return;
+  const hoje=hojeSP(), nomeC=k=>CANAL[k]||k;
+  const jaPost=new Set(videos.filter(v=>v.status==="postado").map(v=>v.id));
+  const futuros=agenda.filter(s=>diaSP(s.scheduled_at)>=hoje&&!jaPost.has(s.video_id));
+  const porDia={};
+  futuros.forEach(s=>{
+    const d=diaSP(s.scheduled_at), k=s.video_id+"|"+d;
+    const it=((porDia[d]=porDia[d]||{})[k]=porDia[d][k]||{id:s.video_id,canal:s.channel,hora:fmtHora(s.scheduled_at),plats:[]});
+    it.plats.push(PLAT[s.platform]||s.platform);
+  });
+  /* "previsto": data que a esteira anotou no vídeo ("Agenda pretendida: 22/11/2026 19h"), ainda sem horário salvo no painel */
+  const prev=v=>{const m=String(v.stage_note||"").match(/agenda\s+pretendida:?\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?(?:\s*(?:às\s*)?(\d{1,2})(?:[:h](\d{2})?)?)?/i);
+    return m?{dia:`${m[3]||hoje.slice(0,4)}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`,hora:m[4]?`${m[4].padStart(2,"0")}:${m[5]||"00"}`:""}:null;};
+  const temAgenda=new Set(futuros.map(s=>s.video_id));
+  videos.filter(v=>(v.status==="aprovado"||v.status==="aguardando")&&!temAgenda.has(v.id)).forEach(v=>{
+    const q=prev(v); if(!q||q.dia<hoje) return;
+    ((porDia[q.dia]=porDia[q.dia]||{})[v.id+"|p"]={id:v.id,canal:v.channel,hora:q.hora,plats:[],prev:true,aguarda:v.status==="aguardando"});
+  });
+  const postHoje=[...Object.keys(CANAL)].flatMap(k=>postadosDoDia(k,hoje).map(p=>({...p,canal:k})));
+  const comData=new Set(Object.values(porDia).flatMap(o=>Object.values(o).map(it=>it.id)));
+  const prontos=videos.filter(v=>v.status==="aprovado"&&!comData.has(v.id));
+  const pAprovar=videos.filter(v=>v.status==="aguardando"&&(v.preview_path||v.produced_at)).length;
+  const ultimo=Object.keys(porDia).sort().pop()||hoje;
+  const dias=[], base=new Date(hoje+"T12:00:00"+OFF);
+  for(let i=0;i<21;i++){ const d=new Date(base.getTime()+i*864e5).toLocaleDateString("en-CA",{timeZone:TZ}); if(i>=7&&d>ultimo) break; dias.push(d); }
+  const chip=(v,canalK,extra,cls)=>`<span class="cal-chip ${cls} ${esc(canalK)}" title="${esc(nomeC(canalK))}${extra?" · "+esc(extra):""}"><i></i>${esc((v&&v.title)||"(sem título)")}</span>`;
+  const linhaDia=d=>{
+    const its=Object.values(porDia[d]||{}).sort((a,b)=>a.hora.localeCompare(b.hora));
+    const dt=new Date(d+"T12:00:00"+OFF), dd=dt.toLocaleDateString("pt-BR",{timeZone:TZ,day:"2-digit",month:"2-digit"}), sem=dt.toLocaleDateString("pt-BR",{timeZone:TZ,weekday:"short"}).replace(".","");
+    const ph=d===hoje?postHoje:[];
+    return `<li class="${d===hoje?"hj":""}${its.length||ph.length?"":" vazio"}"><span class="cal-d"><b>${dd}</b><small>${esc(sem)}</small></span><span class="cal-its">${
+      ph.map(p=>(p.hora?`<span class="cal-h">${esc(p.hora)}</span>`:"")+chip({title:p.titulo},p.canal,"postado hoje","po")).join("")}${its.length?its.map(it=>
+      (it.hora?`<span class="cal-h">${esc(it.hora)}</span>`:"")+chip(videos.find(v=>v.id===it.id)||{title:it.id},it.canal,it.prev?(it.aguarda?"data prevista pela esteira · ainda espera tua aprovação":"data prevista pela esteira · sem horário salvo no painel"):it.plats.join(" · "),it.prev?"pv":"ag")).join(""):ph.length?"":"<em>—</em>"}</span></li>`;
+  };
+  box.innerHTML=`<ol class="cal-lista">
+    <li class="cal-prontos"><span class="cal-d"><b>Prontos</b><small>sem data</small></span><span class="cal-its">${prontos.length?prontos.map(v=>chip(v,v.channel,"pronto, aprovado","pr")).join(""):"<em>nenhum</em>"}${pAprovar?`<button class="link cal-aprovar" type="button" data-ir="fila">+${pAprovar} esperando tua aprovação</button>`:""}</span></li>
+    ${dias.map(linhaDia).join("")}</ol>
+    <p class="cal-leg"><span class="cal-chip pr"><i></i>pronto</span><span class="cal-chip po"><i></i>postado</span><span class="cal-chip ag"><i></i>agendado</span><span class="cal-chip pv"><i></i>previsto</span><span class="cal-chip curioso"><i></i>O Curioso</span><span class="cal-chip zeca"><i></i>Missão Zeca</span></p>`;
 }
 /* segunda a domingo da semana atual, em datas de Brasília */
 function diasDaSemanaSP(){
@@ -510,7 +635,7 @@ function desenharMetas(foco){
   const box=$("#metas"), hoje=hojeSP();
   box.innerHTML=metasRascunho.map((m,i)=>{
     const outro=!(m.canal in CANAL);
-    const feitos=new Set(agenda.filter(s=>s.channel===m.canal&&diaSP(s.scheduled_at)===hoje).map(s=>s.video_id)).size;
+    const feitos=contarPostados(m.canal,hoje);
     const falta=(+m.por_dia||0)-m.horarios.length;
     return `<form class="meta-card ${m.ativo===false?"pausada":""}" data-i="${i}">
       <div class="mc-topo">
@@ -523,7 +648,7 @@ function desenharMetas(foco){
       <div class="mc-linha">
         <div class="campo"><span>Vídeos por dia</span>
           <div class="contador"><button type="button" data-acao="menos" aria-label="Menos">−</button><output>${m.por_dia??"–"}</output><button type="button" data-acao="mais" aria-label="Mais">+</button></div></div>
-        <div class="campo progresso-mini"><span>Hoje</span><b>${feitos}/${m.por_dia||"–"}</b><small>agendados</small></div>
+        <div class="campo progresso-mini" data-pcanal="${esc(m.canal)}" data-pordia="${esc(m.por_dia||"")}" title="Postados hoje nas redes (inclui os que saíram fora da agenda)"><span>Hoje</span><b>${feitos}/${m.por_dia||"–"}</b><small>postados</small></div>
       </div>
       <div class="campo"><span>Horários de postagem (Brasília)</span>
         <div class="horarios">${m.horarios.map((h,j)=>`<span class="hchip"><input type="time" data-h="${j}" value="${esc(h)}" step="300" aria-label="Horário ${j+1}"><button type="button" data-acao="tirar" data-h="${j}" aria-label="Remover horário">×</button></span>`).join("")}
@@ -1119,13 +1244,31 @@ $("#roteiroBox").addEventListener("keydown",e=>{
   if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)&&e.target.classList?.contains("rt-ctxt")){ e.preventDefault(); $("[data-lenviar]")?.click(); }
 });
 
-/* atualiza sozinho a cada 60 s enquanto aberto (sem atrapalhar quem está editando) */
+/* atualiza sozinho a cada 30 s enquanto aberto (sem atrapalhar quem está editando) */
 setInterval(()=>{
   if($("#app").hidden||document.visibilityState!=="visible"||!$("#video").paused) return;
   if(telaAtual==="metas"&&$("#metas .mexeu")) return;
   if(document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
   carregarTudo();
-},60000);
+},30000);
+/* ao voltar pra aba/janela, recarrega na hora */
+let ultimoFoco=0;
+const recarregarFoco=()=>{ if($("#app").hidden||document.visibilityState!=="visible"||Date.now()-ultimoFoco<5000) return; ultimoFoco=Date.now(); carregarTudo(); };
+document.addEventListener("visibilitychange",recarregarFoco); window.addEventListener("focus",recarregarFoco);
+/* realtime do Supabase: se hs3d_videos/hs3d_schedule/hs3d_stats estiverem na publicação supabase_realtime, a tela
+   atualiza no instante em que o worker grava; se não estiverem, nada chega e o polling de 30 s cobre */
+let rtLigado=false, rtTimer=null;
+function ligarRealtime(){
+  if(rtLigado||!sb.channel) return; rtLigado=true;
+  const tocar=()=>{ clearTimeout(rtTimer); rtTimer=setTimeout(()=>{ if(!$("#app").hidden) carregarTudo(); },1500); };
+  try{
+    sb.channel("hs3d-postados")
+      .on("postgres_changes",{event:"*",schema:"public",table:"hs3d_videos"},tocar)
+      .on("postgres_changes",{event:"*",schema:"public",table:"hs3d_schedule"},tocar)
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"hs3d_stats"},tocar)
+      .subscribe();
+  }catch(e){ /* sem realtime: fica no polling */ }
+}
 /* ---------- formatos: aprovação de formato ("Liberar formato") ---------- */
 const FST={em_teste:["Em teste","Os vídeos passam por você."],liberavel:["Liberável","Já dá pra liberar."],liberado:["Liberado","Passa sozinho depois do Avaliador."],pausado:["Pausado","Liberação suspensa: passa por você."]};
 function formatoDe(v){
