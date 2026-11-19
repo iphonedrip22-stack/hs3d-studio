@@ -67,7 +67,7 @@ sb.auth.getSession().then(({data})=>{ if(data.session){ if(!sessaoVista){sessaoV
 
 /* ---------- navegação ---------- */
 function ir(t){
-  telaAtual=t;
+  telaAtual=t; fecharMenu();
   $$(".tela").forEach(s=>{ if(s.id!=="tela-login") s.classList.toggle("on",s.id==="tela-"+t); });
   marcaRail();
   if(t!=="fila"){const v=$("#video"); if(!v.paused) v.pause();}
@@ -79,13 +79,40 @@ function ir(t){
 function marcaRail(){
   const m=$(".modo").dataset.ativo||"link";
   $$(".rail [data-ir]").forEach(b=>b.setAttribute("aria-current",b.dataset.ir===telaAtual&&(!b.dataset.novo||b.dataset.novo===m)?"page":"false"));
+  $("#railMais").setAttribute("aria-current",telaAtual==="diario"?"page":"false");
 }
+/* rail: "⋯" abre um menu pequeno com as telas dos agentes (Diário). Esc fecha e devolve o foco. */
+function fecharMenu(foco){
+  const m=$("#railMenu"); if(m.hidden) return;
+  m.hidden=true; $("#railMais").setAttribute("aria-expanded","false"); if(foco) $("#railMais").focus();
+}
+$("#railMais").addEventListener("click",()=>{
+  const m=$("#railMenu"); if(!m.hidden) return fecharMenu(true);
+  m.hidden=false; $("#railMais").setAttribute("aria-expanded","true"); m.querySelector("[role=menuitem]").focus();
+});
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("#railMenu").hidden){ e.preventDefault(); fecharMenu(true); } });
+document.addEventListener("click",e=>{ if(!e.target.closest("#railMenu,#railMais")) fecharMenu(); });
+
+/* ---------- home: abas Contas | Desenho | Roteiro (Desenho abre primeiro) ---------- */
+const ABAS=["contas","desenho","roteiro"]; let aba="desenho";
+function irAba(n,foco){
+  aba=n; $("#abas").style.setProperty("--i",ABAS.indexOf(n));
+  $$("#abas [role=tab]").forEach(b=>{const on=b.dataset.aba===n; b.setAttribute("aria-selected",on); b.tabIndex=on?0:-1; if(on&&foco) b.focus();});
+  ABAS.forEach(x=>{const p=$("#aba-"+x); p.hidden=x!==n; p.classList.toggle("on",x===n);});
+  if(n!=="desenho"){const v=$("#video"); if(!v.paused) v.pause();}
+  if(n==="contas") renderContas(true); if(n==="roteiro") renderRoteiro(true);
+}
+$("#abas").addEventListener("click",e=>{const b=e.target.closest("[role=tab]"); if(b&&b.dataset.aba!==aba) irAba(b.dataset.aba);});
+$("#abas").addEventListener("keydown",e=>{
+  const i=ABAS.indexOf(aba), j={ArrowRight:(i+1)%3,ArrowLeft:(i+2)%3,Home:0,End:2}[e.key];
+  if(j==null) return; e.preventDefault(); irAba(ABAS[j],true);
+});
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-ir],[data-canal],[data-vid]"); if(!b) return;
   if(b.dataset.ir){ if(b.dataset.novo) modo(b.dataset.novo); return ir(b.dataset.ir); }
   if(b.dataset.canal){ if(b.dataset.canal===canal) return; canal=b.dataset.canal;
     if(numCanal!==canal&&contas.some(c=>c.channel===canal)){ numCanal=canal; renderNumeros(true); } // os números da home acompanham o canal
-    $("#fila").classList.remove("troca"); void $("#fila").offsetWidth; $("#fila").classList.add("troca"); }
+    const pn=$("#aba-"+aba); pn.classList.remove("troca"); void pn.offsetWidth; pn.classList.add("troca"); }
   else { if(selId[canal]===b.dataset.vid) return; selId[canal]=b.dataset.vid; }
   $("#coment").value=""; aviso(""); renderFila();
 });
@@ -168,22 +195,20 @@ function stepperHTML(v){
   return `<li class="trilho" aria-hidden="true"><span style="--p:${i/(ETAPAS.length-1)}"></span></li>`+
     ETAPAS.map(([k,n],j)=>`<li class="${j<i?"feito":j===i?"atual"+(volta?" volta":""):""}"${j===i?' aria-current="step"':""}><i></i><span>${n}</span></li>`).join("");
 }
-function trilhaHTML(p){
-  if(!p) return "<span class='nota'>Caminho ainda não informado</span>";
-  const t=p.replace(/^~\/Maestri\/HS3D\/?/,"").replace(/^kit\/(videos\/)?/,"").split("/").filter(x=>x&&x!=="out");
-  const arq=/\.\w{2,4}$/.test(t[t.length-1]||"")?t.pop():null;
-  return t.map(x=>`<span class="pasta">${esc(x)}</span>`).join('<span class="sep">›</span>')+(arq?`<span class="arq">${esc(arq)}</span>`:"");
-}
-
 /* ---------- fila ---------- */
 const aviso=(t,erro)=>{const a=$("#aviso");a.textContent=t;a.className="aviso"+(erro?" erro":"");};
 const dur=s=>{s=Math.round(+s||0);return s?Math.floor(s/60)+":"+String(s%60).padStart(2,"0"):"";};
 let ultimoVideo=null, ultimoAgenda=null;
+const aguardandoN=k=>videos.filter(v=>v.channel===k&&v.status==="aguardando"&&v.preview_path&&etapa(v)==="aguardando").length;
+function bolinha(el,n,rot){ el.hidden=!n; el.textContent=n||""; el.setAttribute("aria-label",n+" "+rot); }
 async function renderFila(){
   for(const k of ["curioso","zeca"]){
-    const n=videos.filter(v=>v.channel===k&&v.status==="aguardando"&&v.preview_path&&etapa(v)==="aguardando").length;
-    $("#n-"+k).textContent=n?n+" aguardando você":(videos.some(v=>v.channel===k)?"nada aguardando":"sem vídeos ainda");
+    const n=aguardandoN(k);
+    $("#n-"+k).textContent=n?", "+n+" aguardando você":(videos.some(v=>v.channel===k)?", nada aguardando":", sem vídeos ainda");
   }
+  bolinha($("#bDesenho"),aguardandoN(canal),"aguardando você");
+  bolinha($("#bRoteiro"),roteirosDe(canal).length,"em roteiro");
+  renderContas(); renderRoteiro();
   $$("[data-canal]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.canal===canal));
   const its=videos.filter(v=>v.channel===canal);  // canais nunca se misturam
   $("#fila").hidden=!its.length;
@@ -192,11 +217,11 @@ async function renderFila(){
   if(!its.find(v=>v.id===selId[canal])) selId[canal]=(its.find(v=>v.status==="aguardando"&&v.preview_path)||its.find(v=>v.preview_path)||its[0]).id;
   const it=its.find(v=>v.id===selId[canal]);
   const novaLista=$("#lista").dataset.k!==canal+its.length;
-  $("#lista").innerHTML=its.map(v=>{const e=etapa(v), ag=agendaDe(v.id);
+  $("#lista").innerHTML=its.map(v=>{const e=etapa(v);
     return `<li><button class="item" data-vid="${esc(v.id)}" aria-pressed="${v.id===it.id}">
     <span class="mini" data-poster="${esc(v.id)}"></span>
     <span class="t">${esc(v.title)}</span>
-    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${v.auto_aprovado?`<span class="lib" title="Formato liberado: passou sozinho depois do Avaliador">liberado</span>`:""}${ag.length?`<span class="qd">⏱ ${esc(fmtData(ag[0].scheduled_at))}</span>`:""}</span></button></li>`;}).join("");
+    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${v.auto_aprovado?`<span class="lib" title="Formato liberado: passou sozinho depois do Avaliador">liberado</span>`:""}</span></button></li>`;}).join("");
   $("#lista").dataset.k=canal+its.length; if(novaLista) stagger($("#lista"));
   its.forEach(async v=>{const u=await urlPoster(v); const el=document.querySelector(`[data-poster="${CSS.escape(v.id)}"]`); if(u&&el) el.style.backgroundImage=`url("${u}")`;});
   $("#pTitulo").textContent=it.title; $("#pMeta").textContent=[it.episode,dur(it.duration_s)].filter(Boolean).join(", ");
@@ -207,11 +232,9 @@ async function renderFila(){
   const stp=$("#stepper"), sh=stepperHTML(it);
   if(stp.dataset.h!==sh){ stp.dataset.h=sh; stp.classList.remove("vivo"); stp.innerHTML=sh; void stp.offsetWidth; requestAnimationFrame(()=>stp.classList.add("vivo")); }
   $("#etapaNota").hidden=!it.stage_note; $("#etapaNota").textContent=it.stage_note||"";
-  $("#onde").hidden=false; $("#trilha").innerHTML=trilhaHTML(it.mac_path); $("#copiarCaminho").hidden=!it.mac_path;
   const rel=$("#rel");
   if(it.avaliador_md&&it.avaliador_md.trim()){rel.textContent=it.avaliador_md.trim();rel.className="rel";}
   else {rel.textContent="O Avaliador ainda não salvou o parecer deste vídeo em AVALIADOR.md.";rel.className="rel sem";}
-  $("#notasBox").hidden=!it.notes_md; $("#notas").textContent=it.notes_md||"";
   const fim=it.status==="postado"||!it.preview_path;
   $("#aprovar").disabled=$("#reprovar").disabled=$("#pedirAjuste").disabled=fim;
   $("#aprovar").disabled=fim||it.status==="aprovado";
@@ -239,11 +262,6 @@ async function renderFila(){
 }
 $("#video").addEventListener("play",()=>$("#player").classList.add("tocando"));
 $("#video").addEventListener("pause",()=>$("#player").classList.remove("tocando"));
-$("#copiarCaminho").addEventListener("click",async e=>{
-  const it=videos.find(v=>v.id===selId[canal]); if(!it?.mac_path) return;
-  try{ await navigator.clipboard.writeText(it.mac_path); pulso(e.currentTarget); toast("Caminho copiado: "+it.mac_path); }
-  catch{ toast(it.mac_path); }
-});
 
 /* ---------- agenda (o painel só registra; quem posta é o Hermes com "pode postar") ---------- */
 function metasDoCanal(ch){ return metas.filter(m=>m.ativo!==false&&m.canal===ch); }
@@ -430,17 +448,33 @@ function renderHojeMini(){
     box.innerHTML=`<p class="vazio-mini"><b>Agenda desligada</b>A linha do tempo liga depois do migration_v2.sql.${rows.length?" Metas do METAS.md: "+rows.map(r=>esc(r.canal)+" "+esc(r.horarios)).join(" · "):""}</p>`;
     return;
   }
+  const semana=diasDaSemanaSP(), ANEL=113.1;
   box.innerHTML=dadosHoje().map(({k,nome,slots,meta,feitos})=>{
+    const proxima=slots.find(s=>minutos(s.h)>=agoraMin);
     const linhas=slots.map(s=>{
       const passou=minutos(s.h)<agoraMin;
       const v=s.its.length?videos.find(x=>x.id===s.its[0].video_id):null;
-      return `<li class="${s.its.length?"cheio":"vago"}${passou?" passou":""}"><b>${esc(s.h)}</b><span class="pt"></span><span class="tx">${v?esc(v.title):s.its.length?"Agendado":passou?"Vago, já passou":"Vago"}</span></li>`;}).join("");
+      return `<li class="${s.its.length?"cheio":"vago"}${passou?" passou":""}${s===proxima?" agora":""}"><b>${esc(s.h)}</b><span class="pt"></span><span class="tx">${v?esc(v.title):s.its.length?"Agendado":passou?"Vago, já passou":"Vago"}${s===proxima?` <em class="agora-tag">próximo</em>`:""}</span></li>`;}).join("");
+    const ms=metasDoCanal(k), hs=[...new Set(ms.flatMap(m=>m.horarios||[]))].sort();
+    const sem=new Set(agenda.filter(x=>x.channel===k&&semana.has(diaSP(x.scheduled_at))).map(x=>x.video_id)).size;
+    const fila=videos.filter(v=>v.channel===k&&v.status==="aprovado").length;
+    const pct=meta?Math.min(1,feitos/meta):0;
     return `<div class="hm-canal ${esc(k)}">
-      <div class="hm-topo"><h3>${esc(nome)}</h3><span class="placar"><b>${feitos}</b>/${meta||"–"} <small>agendados</small></span></div>
-      ${reguaHTML(slots,agoraMin,hojeMiniVisto)}
+      <div class="hm-topo"><div><h3>${esc(nome)}</h3><small>${meta?`meta: ${meta} por dia${hs.length?" · "+esc(hs.join(", ")):""}`:"sem meta diária"}</small></div>
+        <span class="anel-m" role="img" aria-label="${feitos} de ${meta||0} agendados hoje"><svg viewBox="0 0 46 46" aria-hidden="true"><circle class="f" cx="23" cy="23" r="18"/><circle class="v" cx="23" cy="23" r="18" data-o="${(ANEL*(1-pct)).toFixed(1)}" style="stroke-dashoffset:${hojeMiniVisto?(ANEL*(1-pct)).toFixed(1):ANEL}"/></svg><b>${feitos}/${meta||"–"}</b></span></div>
       ${slots.length?`<ol class="hm-slots">${linhas}</ol>`:`<p class="vazio-mini"><b>Sem horários na meta</b><button class="link" data-ir="metas">Definir em Metas</button></p>`}
+      <div class="metas-l">
+        <div><span>Semana</span><b>${sem} de ${meta?meta*7:"–"} agendados</b><span class="bar" style="--p:${meta?Math.min(1,sem/(meta*7)).toFixed(3):0}"><i></i></span></div>
+        <div title="Aprovados por você e ainda não postados. A barra mostra quanto da meta da semana eles cobrem."><span>Fila aprovada</span><b>${fila} vídeo${fila===1?"":"s"}</b><span class="bar" style="--p:${meta?Math.min(1,fila/(meta*7)).toFixed(3):0}"><i></i></span></div>
+      </div>
     </div>`;}).join("");
-  if(!hojeMiniVisto){ hojeMiniVisto=true; stagger(box); requestAnimationFrame(()=>$$("#hojeMini .regua").forEach(r=>r.classList.add("vivo"))); }
+  if(!hojeMiniVisto){ hojeMiniVisto=true; stagger(box); }
+  requestAnimationFrame(()=>requestAnimationFrame(()=>$$("#hojeMini .anel-m .v").forEach(c=>c.style.strokeDashoffset=c.dataset.o)));
+}
+/* segunda a domingo da semana atual, em datas de Brasília */
+function diasDaSemanaSP(){
+  const hoje=hojeSP(), base=new Date(hoje+"T12:00:00"+OFF), dow=(base.getUTCDay()+6)%7;
+  return new Set(Array.from({length:7},(_,i)=>new Date(base.getTime()+(i-dow)*864e5).toLocaleDateString("en-CA",{timeZone:TZ})));
 }
 const skel=n=>Array.from({length:n},()=>`<div class="sk sk-bloco"></div>`).join("");
 
@@ -683,7 +717,7 @@ const CONECTAR={
   youtube:["Em breve","Para conectar de verdade (views por período, retenção) precisa criar um cliente OAuth no Google Cloud com a conta do canal (YouTube Data/Analytics API). Até lá, inscritos e views dos vídeos vêm da página pública, sozinhos."],
   instagram:["Em breve","Precisa a conta ser profissional (Criador ou Empresa), ligada a uma Página do Facebook, e um app na Meta. Até lá, seguidores e posts vêm do perfil público."],
   tiktok:["Manual por enquanto","A API do TikTok exige um app aprovado por eles. Seguidores, curtidas e vídeos vêm do perfil público quando ele responde; views de cada vídeo você informa à mão."]};
-let contas=[],nums=[],numStatus={},v4=null,numCanal="curioso";
+let contas=[],contasBanco=[],nums=[],numStatus={},v4=null,numCanal="curioso";
 const fmtN=n=>n==null?"–":Number(n).toLocaleString("pt-BR");
 async function carregarNumeros(){
   if(!$("#numCards").children.length) $("#numCards").innerHTML=skel(3);
@@ -692,7 +726,8 @@ async function carregarNumeros(){
     sb.from("hs3d_stats").select("*").order("captured_at",{ascending:false}).limit(2000),
     sb.from("hs3d_kv").select("*").eq("key","stats_status").maybeSingle()]);
   v4=!(faltaTabela(a.error)||faltaTabela(s.error));
-  contas=(v4&&!a.error&&a.data?.length)?a.data:CONTAS_PADRAO;
+  contasBanco=v4&&!a.error?(a.data||[]):[];
+  contas=contasBanco.length?contasBanco:CONTAS_PADRAO;
   nums=v4&&!s.error?(s.data||[]):[];
   numStatus=k.data?.value||{};
   renderNumeros(true);
@@ -795,6 +830,7 @@ function renderNumeros(animar){
   $("#nvPlat").innerHTML=[...new Set(cards.map(c=>c.platform))].map(p=>`<option value="${p}">${PLAT[p]}</option>`).join("")||Object.entries(PLAT).map(([k,n])=>`<option value="${k}">${n}</option>`).join("");
   $("#ncCanal").innerHTML=[...cs].map(([k,n])=>`<option value="${esc(k)}" ${k===numCanal?"selected":""}>${esc(n)}</option>`).join("")+`<option value="_novo">+ Canal novo</option>`;
   $("#fNumVid").querySelector("button").disabled=$("#fNumConta").querySelector("button").disabled=!v4;
+  renderContas();
 }
 function contar(root){
   if(reduz.matches) return;
@@ -852,6 +888,119 @@ $("#fNumConta").addEventListener("submit",async e=>{
   const {error}=await sb.from("hs3d_accounts").insert({id:ch+":"+pl,channel:ch,channel_name:nome,platform:pl,handle:handle||u,url,auto:true,ordem:100});
   if(error){msg.className="aviso erro";msg.textContent=/duplicate|unique/i.test(error.message)?"Esse canal já tem conta nessa plataforma.":"Não consegui adicionar: "+error.message;return;}
   e.target.reset(); $("#ncCanalNovo").hidden=true; msg.textContent=""; numCanal=ch; toast("Conta adicionada. O Mac busca os números públicos em até 2 min."); await carregarNumeros();
+});
+
+/* ---------- aba Contas: só o que está em hs3d_accounts (nada fixo no código) ---------- */
+const CONEXAO={conectada:"conectada",connected:"conectada",ok:"conectada",pendente:"pendente",pending:"pendente",manual:"manual",erro:"com erro",error:"com erro",desconectada:"desconectada"};
+let contasVisto="";
+function renderContas(animar){
+  const box=$("#contasBox"); if(!box||aba!=="contas"&&!animar) return;
+  if(v4===null){ box.innerHTML=skel(2); return; }
+  const nomeC=canaisNumeros().get(canal)||CANAL[canal]||canal;
+  const cs=contasBanco.filter(c=>c.channel===canal);  // canais nunca se misturam
+  const ms=metasDoCanal(canal);
+  const fmts=listaFormatos().filter(f=>f.canal===canal);
+  const lista=cs.length?`<div class="contas-lista">${cs.map(c=>{
+      const f=ultimo(c.channel,c.platform,"followers"), u=httpsUrl(c.url), st=c.connect_status;
+      return `<div class="conta ${esc(c.platform)}"><span class="pl"><span class="ico ${esc(c.platform)}" aria-hidden="true"></span>${esc(PLAT[c.platform]||c.platform)}</span>
+        ${u?`<a class="h" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(c.handle||"abrir perfil")}</a>`:`<span class="h">${esc(c.handle||"")}</span>`}
+        <span class="cnum">${f?fmtN(f.followers):"–"}<span class="u">${f?esc(SEGUIDOR[c.platform]||"seguidores"):"sem números ainda"}</span></span>
+        <span class="estado ${st&&!/conect|connect|^ok$/i.test(st)?"alerta":""}${st?"":" sem"}">${st?"● "+esc(CONEXAO[st]||st):"conexão não informada"}</span></div>`;}).join("")}</div>`
+    :`<p class="vazio-mini"><b>Nenhuma conta cadastrada para este canal</b>${v4?"Cadastre o @ de cada rede para os números aparecerem.":"Falta rodar o migration_v4.sql no Supabase para as contas aparecerem."}<button class="mini-btn" type="button" data-conta-add>+ Cadastrar conta</button></p>`;
+  const html=`<div class="canal-bloco ${esc(canal)}">
+      <div class="cb-topo"><div><h3>${esc(nomeC)}</h3><small>${ms.length?ms.map(m=>`${esc(m.formato||m.id)} · ${m.por_dia??"–"} por dia${(m.horarios||[]).length?" ("+esc(m.horarios.join(", "))+")":""}`).join(" · "):"sem meta cadastrada"}</small></div>
+        <button class="mini-btn" type="button" data-conta-add>+ Conta</button></div>
+      ${lista}
+    </div>
+    ${fmts.length?`<div class="fmt-lista"><h4>Formatos de ${esc(nomeC)}</h4><ul>${fmts.map(f=>{const st=statsFormato(f).st;
+      return `<li><b>${esc(f.nome)}</b><span class="fst ${st}">${FST[st][0]}</span></li>`;}).join("")}</ul><button class="link" type="button" data-ir="metas">Ver em Metas</button></div>`:""}
+    <div class="novo-canal">
+      <span class="mais-ic" aria-hidden="true">+</span>
+      <div><b>Criar canal novo</b><span>Abre o “Novo formato › Criar do zero” com “Canal novo”. As contas você cadastra aqui depois.</span></div>
+      <button class="btn sm" type="button" data-ir="novo" data-novo="nova">Criar canal novo</button>
+    </div>`;
+  const k=canal+"|"+html; if(k===contasVisto) return; const mudouCanal=!contasVisto.startsWith(canal+"|"); contasVisto=k;
+  box.innerHTML=html; if(animar||mudouCanal) stagger(box);
+}
+/* "+ Conta" leva ao formulário que já existe em Números › Adicionar conta, com o canal escolhido */
+document.addEventListener("click",e=>{
+  if(!e.target.closest("[data-conta-add]")) return;
+  if(canaisNumeros().has(canal)) numCanal=canal;
+  ir("numeros");
+  const d=$("#numAddConta"); d.open=true;
+  $("#ncCanal").value=canal; d.scrollIntoView({behavior:reduz.matches?"auto":"smooth",block:"center"});
+  $("#ncHandle").focus({preventScroll:true});
+});
+
+/* ---------- aba Roteiro: item da esteira em roteiro (o texto do roteiro.txt não vem pro banco) ---------- */
+function roteirosDe(ch){ return videos.filter(v=>v.channel===ch&&v.status!=="postado"&&etapa(v)==="roteiro"); }
+/* trecho "## Roteiro" do NOTAS.md, se houver: só o que o Mac sincronizou */
+function trechoRoteiro(md){
+  const ls=String(md||"").split(/\r?\n/), i=ls.findIndex(l=>/^#{1,4}\s*.*roteiro/i.test(l));
+  if(i<0) return null;
+  const nivel=ls[i].match(/^#+/)[0].length, fim=ls.findIndex((l,j)=>j>i&&new RegExp("^#{1,"+nivel+"}\\s").test(l));
+  const corpo=ls.slice(i+1,fim<0?undefined:fim).map(l=>l.trim()).filter(Boolean);
+  return corpo.length?corpo:null;
+}
+const rtSel={curioso:null,zeca:null}; let roteiroVisto="", rtVistoId=null;
+function renderRoteiro(animar){
+  const box=$("#roteiroBox"); if(!box||aba!=="roteiro"&&!animar) return;
+  if(!carregouUmaVez){ box.innerHTML=skel(2); return; }
+  let its=roteirosDe(canal);
+  if(!its.length){ const semVideo=videos.filter(v=>v.channel===canal&&!v.preview_path&&v.status!=="postado"); if(semVideo.length) its=[semVideo[0]]; }
+  if(!its.length){
+    const h=`<p class="vazio-mini rt-vazio"><b>Nenhum roteiro em andamento em ${esc(CANAL[canal]||canal)}</b>Quando o Roteirista começar um episódio, ele aparece aqui.<button class="btn sm fantasma" type="button" data-ir="novo" data-novo="nova">Escrever do zero</button></p>`;
+    if(roteiroVisto!==h){ roteiroVisto=h; rtVistoId=null; box.innerHTML=h; stagger(box); } return;
+  }
+  if(!its.find(v=>v.id===rtSel[canal])) rtSel[canal]=its[0].id;
+  const it=its.find(v=>v.id===rtSel[canal]), e=etapa(it);
+  const linhas=trechoRoteiro(it.notes_md);
+  const ds=decisoes.filter(d=>d.video_id===it.id&&d.comment);
+  const rascunho=document.activeElement?.id==="rtIdeia"?null:($("#rtIdeia")?.value||"");
+  if(rascunho===null) return; // não redesenha enquanto você digita
+  const h=`${its.length>1?`<div class="chips rt-itens" role="group" aria-label="Episódio em roteiro">${its.map(v=>`<button type="button" data-rt="${esc(v.id)}" aria-pressed="${v.id===it.id}">${esc(v.episode||v.title)}</button>`).join("")}</div>`:""}
+    <div class="rt-cab"><b>${esc(it.title||"Sem título ainda")}</b>${it.episode?`<span>${esc(it.episode)}</span>`:""}<span class="selo ${e==="roteiro"?"voce":"fila"}">${esc(ETIQ[e]||e)}</span>
+      ${it.stage_note?`<p class="rt-nota">${esc(it.stage_note)}</p>`:""}</div>
+    <div class="rt-cols">
+      <div class="rt-col">
+        <header><span class="av ag" aria-hidden="true">R</span><b>Rascunho do roteirista</b><small>${it.produced_at?esc(fmtData(it.produced_at)):"agente"}</small></header>
+        ${linhas?`<ol class="rasc">${linhas.map(l=>`<li><span>${esc(l)}</span></li>`).join("")}</ol><p class="nota rt-fonte">Trecho “Roteiro” do NOTAS.md do episódio.</p>`
+          :`<p class="rt-sem">O texto completo do roteiro ainda não vem para o painel. Por enquanto só chega o título (a 1ª frase do roteiro.txt).</p>`}
+        <p class="rt-embreve"><span class="selo fila">em breve</span> Comentar linha a linha</p>
+      </div>
+      <div class="rt-col">
+        <header><span class="av vc" aria-hidden="true">V</span><b>Suas ideias e ajustes</b><small>só você edita</small></header>
+        <div class="ideias">
+          <label class="sr" for="rtIdeia">Sua ideia para o roteirista</label>
+          <textarea id="rtIdeia" placeholder="Ex.: começa com o relógio na tela; mais tensão antes da virada">${esc(rascunho)}</textarea>
+          <p class="nota">Vira um <b>pedido de ajuste</b> de “${esc(it.title||it.episode||"este episódio")}”: o Hermes entrega o comentário aos agentes e o item volta para edição.</p>
+          ${ds.map(d=>`<div class="coment"><em>${d.decision==="ajuste"?"A":d.decision==="reprovado"?"R":"✓"}</em><div><small>você · ${esc(DEC[d.decision]||d.decision)} · ${esc(fmtData(d.created_at))}${d.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(d.comment)}</div></div>`).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="rt-acoes">
+      <button class="btn meio sm" type="button" id="rtEnviar">Enviar ideia pro roteirista</button>
+      <button class="btn sm" type="button" disabled title="Em breve: aprovar roteiro ainda não existe no backend. “Aprovar” aqui significaria vídeo aprovado para postar.">Aprovar roteiro <span class="selo fila">em breve</span></button>
+      <button class="btn fantasma sm" type="button" data-ir="novo" data-novo="nova">Escrever do zero</button>
+      <p class="aviso" id="rtMsg" role="status"></p>
+    </div>`;
+  if(h===roteiroVisto) return; const novo=rtVistoId!==it.id; roteiroVisto=h; rtVistoId=it.id;
+  box.innerHTML=h; if(animar||novo) stagger(box);
+}
+$("#roteiroBox").addEventListener("click",async e=>{
+  const c=e.target.closest("[data-rt]"); if(c){ rtSel[canal]=c.dataset.rt; renderRoteiro(true); return; }
+  const btn=e.target.closest("#rtEnviar"); if(!btn) return;
+  const it=videos.find(v=>v.id===rtSel[canal]), t=$("#rtIdeia"), msg=$("#rtMsg"), txt=t.value.trim();
+  msg.className="aviso";
+  if(!it) return;
+  if(!txt){ msg.className="aviso erro"; msg.textContent="Escreva a ideia antes de enviar."; t.focus(); return; }
+  if(!confirm(`Enviar como pedido de ajuste de “${it.title||it.episode}”? O item volta para edição com o seu comentário.`)) return;
+  btn.disabled=true; btn.classList.add("carregando");
+  const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:"ajuste",comment:txt});
+  btn.disabled=false; btn.classList.remove("carregando");
+  if(error){ msg.className="aviso erro"; msg.textContent="Não consegui enviar: "+error.message; return; }
+  t.value=""; pulso(btn); toast("Ideia enviada como pedido de ajuste. O Mac entrega aos agentes em até 2 min.");
+  await carregarTudo();
 });
 
 /* atualiza sozinho a cada 60 s enquanto aberto (sem atrapalhar quem está editando) */

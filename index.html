@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#170f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Estúdio HS3D">
-<link rel="stylesheet" href="css/app.css?v=9">
+<link rel="stylesheet" href="css/app.css?v=10">
 </head>
 <body>
 <noscript><p class="boot">Ative o JavaScript para entrar no Estúdio HS3D.</p></noscript>
@@ -39,8 +39,11 @@
     <button type="button" class="criar" data-ir="novo" data-novo="link" aria-label="Novo formato a partir de um link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Novo</span><em>Novo formato a partir de um link. Solte ou cole um link https aqui.</em></button>
     <button type="button" class="so-desk" data-ir="novo" data-novo="nova" aria-label="Criar formato do zero"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg><span>Criar do zero</span></button>
     <button type="button" data-ir="numeros" aria-label="Números"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg><span>Números</span></button>
-    <button type="button" data-ir="diario" aria-label="Diário"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2zM6 3v16M10 8h5M10 12h5"/></svg><span>Diário</span></button>
+    <button type="button" class="rail-mais" id="railMais" aria-label="Mais opções" aria-haspopup="menu" aria-expanded="false" aria-controls="railMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Mais</span></button>
   </nav>
+  <div class="rail-menu" id="railMenu" role="menu" aria-label="Mais opções" hidden>
+    <button type="button" role="menuitem" data-ir="diario"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v16H8a2 2 0 0 1-2-2zM6 3v16M10 8h5M10 12h5"/></svg>Diário da esteira (agentes)</button>
+  </div>
   <header class="topo">
     <b class="marca">Estúdio HS 3D</b>
     <span class="quem" id="quem"></span>
@@ -51,12 +54,23 @@
   <!-- INÍCIO: painel consolidado (fila em andamento + hoje + números) -->
   <section class="tela on" id="tela-fila">
    <div class="home">
-    <section class="painel p-fila" aria-labelledby="tAndamento">
-    <header class="painel-topo"><h2 id="tAndamento">Em andamento</h2><span class="painel-sub">fila de aprovação</span></header>
-    <div class="canais" role="group" aria-label="Canal">
-      <button data-canal="curioso" aria-pressed="true">O Curioso<small id="n-curioso"></small></button>
-      <button data-canal="zeca" aria-pressed="false">Missão Zeca<small id="n-zeca"></small></button>
+    <section class="painel p-fila p-estudio" aria-label="Estúdio">
+    <div class="est-topo">
+      <div class="abas" role="tablist" id="abas" aria-label="Área do estúdio">
+        <span class="pilula" aria-hidden="true"></span>
+        <button type="button" role="tab" id="tab-contas" data-aba="contas" aria-controls="aba-contas" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.6c1.9.6 3.1 2.4 3.5 5.4"/></svg>Contas</button>
+        <button type="button" role="tab" id="tab-desenho" data-aba="desenho" aria-controls="aba-desenho" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg>Desenho<span class="bolinha" id="bDesenho" hidden></span></button>
+        <button type="button" role="tab" id="tab-roteiro" data-aba="roteiro" aria-controls="aba-roteiro" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5"/></svg>Roteiro<span class="bolinha" id="bRoteiro" hidden></span></button>
+      </div>
+      <div class="chips est-canais" role="group" aria-label="Canal">
+        <button type="button" data-canal="curioso" aria-pressed="true">O Curioso<small class="sr" id="n-curioso"></small></button>
+        <button type="button" data-canal="zeca" aria-pressed="false">Missão Zeca<small class="sr" id="n-zeca"></small></button>
+      </div>
     </div>
+
+    <div class="aba" id="aba-contas" role="tabpanel" aria-labelledby="tab-contas" tabindex="0" hidden><div id="contasBox"></div></div>
+
+    <div class="aba on" id="aba-desenho" role="tabpanel" aria-labelledby="tab-desenho">
     <div class="esqueleto" id="skFila" aria-hidden="true"><span class="sk sk-player"></span><span class="sk sk-l"></span><span class="sk sk-l curta"></span><span class="sk sk-bloco"></span></div>
     <p class="vazio" id="vazio" hidden></p>
     <div class="fila" id="fila" hidden>
@@ -74,15 +88,8 @@
         <ol class="stepper" id="stepper" aria-label="Etapa da esteira"></ol>
         <p class="etapa-nota" id="etapaNota" hidden></p>
 
-        <div class="onde" id="onde" hidden>
-          <span class="rot">Onde está</span>
-          <span class="trilha" id="trilha"></span>
-          <button class="mini-btn" id="copiarCaminho" type="button">Copiar caminho</button>
-        </div>
-
         <h2 class="sub2">Parecer do Avaliador</h2>
         <div class="rel" id="rel"></div>
-        <details class="notas" id="notasBox"><summary>Notas de produção (NOTAS.md)</summary><pre id="notas"></pre></details>
         <div class="decide">
           <button class="btn" id="aprovar" type="button">Aprovar</button>
           <button class="btn meio" id="pedirAjuste" type="button" aria-expanded="false" aria-controls="ajusteBox">Pedir ajuste</button>
@@ -114,18 +121,21 @@
         </div></div>
         <p class="nota fechada" id="agendaFechada">Os horários de postagem abrem aqui quando você aprovar o vídeo.</p>
         <div class="hist" id="hist"></div>
-      </div>
-
-      <div class="prog">
-        <h2>Programação do canal</h2>
-        <ul id="lista"></ul>
+        <div class="prog">
+          <h2>Próximos na esteira</h2>
+          <ul id="lista"></ul>
+        </div>
       </div>
     </div>
+    </div>
+
+    <div class="aba" id="aba-roteiro" role="tabpanel" aria-labelledby="tab-roteiro" tabindex="0" hidden><div id="roteiroBox"></div></div>
     </section>
 
     <div class="home-dir">
       <section class="painel p-hoje" aria-labelledby="tHojeMini">
-        <header class="painel-topo"><h2 id="tHojeMini">Hoje</h2><span class="painel-sub" id="hojeMiniData"></span>
+        <header class="painel-topo"><h2 id="tHojeMini">Hoje</h2><span class="painel-sub"><span id="hojeMiniData"></span> · agenda e metas</span>
+          <button class="mini-btn editar-metas" type="button" data-ir="metas">Editar metas</button>
           <button class="ver-tudo" type="button" data-ir="hoje" aria-label="Ver tudo de Hoje">Ver tudo</button></header>
         <div class="hoje-mini" id="hojeMini"><div class="sk sk-bloco"></div><div class="sk sk-bloco"></div></div>
       </section>
@@ -282,7 +292,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="js/supabase.umd.js"></script>
-<script src="js/config.js?v=8"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/config.js?v=9"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
