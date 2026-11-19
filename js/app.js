@@ -12,7 +12,9 @@ const CANAL={curioso:"O Curioso",zeca:"Missão Zeca"};
 const PLAT={instagram:"Instagram",tiktok:"TikTok",youtube:"YouTube"};
 const ETAPAS=[["roteiro","Roteiro"],["edicao","Edição"],["avaliador","Avaliador"],["aguardando","Você"],["aprovado","Aprovado"],["agendado","Agenda"],["postado","Postado"]];
 const ETIQ={roteiro:"Roteiro",edicao:"Edição",avaliador:"No Avaliador",aguardando:"Aguardando você",aprovado:"Aprovado",agendado:"Agendado",postado:"Postado"};
-const DEC={aprovado:"Aprovado",reprovado:"Reprovado",ajuste:"Ajuste pedido"};
+const DEC={aprovado:"Aprovado",reprovado:"Reprovado",ajuste:"Ajuste pedido",roteiro_aprovado:"Roteiro aprovado",ideia_roteiro:"Ideia pro roteirista"};
+/* só estas decisões mexem na fila do vídeo; roteiro_aprovado / ideia_roteiro (v8) são só do roteiro */
+const VIDEO_DEC=["aprovado","reprovado","ajuste"];
 const FMT_ST=[["novo","Novo"],["em_criacao","Em criação"],["piloto","Piloto"],["aprovado","Aprovado"]];
 const cfg=window.HS3D_CONFIG||{};
 const TZ="America/Sao_Paulo", OFF="-03:00"; // Brasil sem horário de verão desde 2019
@@ -32,6 +34,7 @@ const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{
 
 let videos=[],decisoes=[],agenda=[],metas=[],metasKv=null,formatos=[],v6=null,canal="curioso",selId={curioso:null,zeca:null};
 let semTabelas=false, v2=null, carregouUmaVez=false, telaAtual="fila";
+let comentRot=[], v8=false; /* v8: migration_v8_roteiro.sql (roteiro_md + hs3d_script_comments + decisões de roteiro) */
 const urlCache={};
 const faltaTabela=e=>e&&/does not exist|schema cache|not find|PGRST205|42P01/i.test(e.message||"");
 
@@ -141,12 +144,13 @@ async function carregarTudo(){
       $("#vazio").hidden=false;
       $("#vazio").textContent=semTabelas?"As tabelas do painel ainda não foram criadas no Supabase (falta colar o schema.sql no SQL Editor).":"Erro ao carregar a fila: "+r.error.message; }
     else { semTabelas=false; videos=r.data||[]; }
-    const [d,a,m,k,fm]=await Promise.all([
+    const [d,a,m,k,fm,sc]=await Promise.all([
       sb.from("hs3d_decisions").select("*").order("created_at",{ascending:false}).limit(1000),
       sb.from("hs3d_schedule").select("*").order("scheduled_at",{ascending:true}).limit(500),
       sb.from("hs3d_metas").select("*").order("ordem",{ascending:true}).order("created_at",{ascending:true}),
       sb.from("hs3d_kv").select("*").eq("key","metas").maybeSingle(),
-      sb.from("hs3d_formats").select("*")]);
+      sb.from("hs3d_formats").select("*"),
+      sb.from("hs3d_script_comments").select("*").order("created_at",{ascending:false}).limit(1000)]);
     decisoes=d.error?[]:(d.data||[]);
     mostrarAlerta();
     v2=!(faltaTabela(a.error)||faltaTabela(m.error));
@@ -154,6 +158,9 @@ async function carregarTudo(){
     metas=m.error?[]:(m.data||[]);
     metasKv=k.error?null:k.data;
     v6=!fm.error; formatos=fm.error?[]:(fm.data||[]);
+    /* v8 só liga com a tabela nova E a coluna roteiro_md; sem migration a aba volta ao modo antigo */
+    comentRot=sc.error?[]:(sc.data||[]);
+    v8=!sc.error&&!semTabelas&&(!videos.length||Object.prototype.hasOwnProperty.call(videos[0],"roteiro_md"));
     $("#faixaV2").hidden=v2||semTabelas;
     $("#faixaV2").textContent="Falta rodar o migration_v2.sql no Supabase (projeto hs3d › SQL Editor). Até lá: metas, agenda e “Criar do zero” ficam só para leitura.";
   } finally { carregando=false; carregouUmaVez=true; $("#skFila").hidden=true; }
@@ -178,7 +185,7 @@ const agendaDe=id=>agenda.filter(s=>s.video_id===id);
 function etapa(v){
   let e=v.stage;
   if(v.status==="postado") return "postado";
-  const ult=decisoes.find(d=>d.video_id===v.id);
+  const ult=decisoes.find(d=>d.video_id===v.id&&VIDEO_DEC.includes(d.decision));
   if(ult&&(ult.decision==="ajuste"||ult.decision==="reprovado")&&(!v.produced_at||new Date(ult.created_at)>new Date(v.produced_at))) return "edicao";
   if(!e){
     if(v.status==="aprovado") e="aprovado";
@@ -239,7 +246,7 @@ async function renderFila(){
   $("#aprovar").disabled=$("#reprovar").disabled=$("#pedirAjuste").disabled=fim;
   $("#aprovar").disabled=fim||it.status==="aprovado";
   $("#aprovar").textContent=it.status==="aprovado"?"Aprovado ✓":"Aprovar";
-  const hs=decisoes.filter(d=>d.video_id===it.id);
+  const hs=decisoes.filter(d=>d.video_id===it.id&&VIDEO_DEC.includes(d.decision));
   const auto=it.auto_aprovado?`<div class="aprovado auto"><b>Aprovado automaticamente</b>${it.auto_aprovado_at?" · "+esc(fmtData(it.auto_aprovado_at))+" (Brasília)":""}<br>Formato liberado e o Avaliador aprovou. Ainda dá pra pedir ajuste ou reprovar; reprovar tira a liberação do formato.</div>`:"";
   $("#hist").innerHTML=auto+(hs.length?hs.map(d=>`<div class="${d.decision}"><b>${DEC[d.decision]||esc(d.decision)}</b> · ${esc(fmtData(d.created_at))} (Brasília)${d.decided_by?" · "+esc(d.decided_by):""}${d.comment?"<br>"+esc(d.comment):""}${d.synced_at?"<br>✓ entregue ao Hermes":"<br>… aguardando o Mac sincronizar"}</div>`).join(""):"");
   renderAgenda(it);
@@ -932,7 +939,12 @@ document.addEventListener("click",e=>{
   $("#ncHandle").focus({preventScroll:true});
 });
 
-/* ---------- aba Roteiro: item da esteira em roteiro (o texto do roteiro.txt não vem pro banco) ---------- */
+/* ---------- aba Roteiro ----------
+   v8 (migration_v8_roteiro.sql): texto inteiro vem de hs3d_videos.roteiro_md (o worker lê o roteiro.txt no Mac);
+   "Aprovar roteiro" grava decision='roteiro_aprovado' (NÃO aprova o vídeo nem libera postagem);
+   "Enviar ideia" grava decision='ideia_roteiro' (o item NÃO volta pra edição);
+   comentário por linha vai pra hs3d_script_comments. O Mac entrega tudo em painel/ROTEIRO_PAINEL.md.
+   Sem a v8: modo antigo (só título/trecho do NOTAS.md, ideia = pedido de ajuste, aprovar/comentar desligados). */
 function roteirosDe(ch){ return videos.filter(v=>v.channel===ch&&v.status!=="postado"&&etapa(v)==="roteiro"); }
 /* trecho "## Roteiro" do NOTAS.md, se houver: só o que o Mac sincronizou */
 function trechoRoteiro(md){
@@ -942,7 +954,20 @@ function trechoRoteiro(md){
   const corpo=ls.slice(i+1,fim<0?undefined:fim).map(l=>l.trim()).filter(Boolean);
   return corpo.length?corpo:null;
 }
-const rtSel={curioso:null,zeca:null}; let roteiroVisto="", rtVistoId=null;
+/* linhas do roteiro: uma por linha do arquivo; roteiro de um parágrafo só (O Curioso) quebra por frase */
+function linhasRoteiro(t){
+  let ls=String(t||"").split(/\n/).map(l=>l.trim()).filter(Boolean);
+  if(ls.length<=2&&ls.join(" ").length>160) ls=ls.flatMap(l=>l.split(/(?<=[.!?…])\s+(?=\S)/).map(x=>x.trim()).filter(Boolean));
+  return ls.length?ls:null;
+}
+const rtSel={curioso:null,zeca:null}; let roteiroVisto="", rtVistoId=null, rtLinhaAberta=null;
+const ICON_COM=`<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>`;
+function aprovacaoRoteiro(it){
+  const ap=decisoes.find(d=>d.video_id===it.id&&d.decision==="roteiro_aprovado");
+  if(!ap) return null;
+  const mudou=it.roteiro_at&&new Date(it.roteiro_at)>new Date(ap.created_at);
+  return {d:ap,mudou};
+}
 function renderRoteiro(animar){
   const box=$("#roteiroBox"); if(!box||aba!=="roteiro"&&!animar) return;
   if(!carregouUmaVez){ box.innerHTML=skel(2); return; }
@@ -954,53 +979,114 @@ function renderRoteiro(animar){
   }
   if(!its.find(v=>v.id===rtSel[canal])) rtSel[canal]=its[0].id;
   const it=its.find(v=>v.id===rtSel[canal]), e=etapa(it);
-  const linhas=trechoRoteiro(it.notes_md);
-  const ds=decisoes.filter(d=>d.video_id===it.id&&d.comment);
-  const rascunho=document.activeElement?.id==="rtIdeia"?null:($("#rtIdeia")?.value||"");
-  if(rascunho===null) return; // não redesenha enquanto você digita
+  // não redesenha enquanto você digita (ideia ou comentário de linha)
+  const ae=document.activeElement;
+  if(ae&&(ae.id==="rtIdeia"||ae.classList?.contains("rt-ctxt"))) return;
+  const rascunho=$("#rtIdeia")?.value||"", rascLinha=$(".rt-ctxt")?.value||"";
+  const doMac=v8&&it.roteiro_md?linhasRoteiro(it.roteiro_md):null;
+  const linhas=doMac||trechoRoteiro(it.notes_md);
+  const coms=v8?comentRot.filter(c=>c.video_id===it.id):[];
+  const porLinha={}; coms.forEach(c=>{(porLinha[c.linha]=porLinha[c.linha]||[]).unshift(c);});
+  const ds=decisoes.filter(d=>d.video_id===it.id&&d.comment&&(v8?d.decision==="ideia_roteiro"||d.decision==="ajuste":true));
+  const ap=v8?aprovacaoRoteiro(it):null;
+  const podeComentar=v8&&!!doMac;
+  if(rtLinhaAberta&&(rtLinhaAberta.id!==it.id||!podeComentar||rtLinhaAberta.n>(doMac||[]).length)) rtLinhaAberta=null;
+  const fonte=doMac?`${esc(it.roteiro_fonte||"roteiro")}${it.roteiro_at?" · salvo no Mac "+esc(fmtData(it.roteiro_at)):""}`:"Trecho “Roteiro” do NOTAS.md do episódio.";
+  const semTexto=v8?`<p class="rt-sem">O Mac ainda não achou o arquivo de roteiro deste episódio. Assim que o Roteirista salvar o <code>roteiro.txt</code> na pasta do episódio, o texto inteiro aparece aqui (em até 2 min).</p>`
+    :`<p class="rt-sem">O texto completo do roteiro ainda não vem para o painel. Por enquanto só chega o título (a 1ª frase do roteiro.txt).</p>`;
+  const li=(l,i)=>{ const n=i+1, cs=porLinha[n]||[], aberta=rtLinhaAberta&&rtLinhaAberta.id===it.id&&rtLinhaAberta.n===n;
+    return `<li class="${cs.length?"tem-com":""}${aberta?" aberta":""}"><span>${esc(l)}</span>${podeComentar?`<button type="button" class="rt-lc" data-ln="${n}" aria-expanded="${aberta}" aria-label="Comentar a linha ${n}${cs.length?` (${cs.length} comentário${cs.length>1?"s":""})`:""}" title="Comentar esta linha">${ICON_COM}${cs.length?`<b>${cs.length}</b>`:""}</button>`:""}
+      ${cs.length?`<div class="rt-lcoms">${cs.map(c=>`<p><small>você · ${esc(fmtData(c.created_at))}${c.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(c.comentario)}</p>`).join("")}</div>`:""}
+      ${aberta?`<div class="rt-lform"><label class="sr" for="rtC${n}">Comentário da linha ${n}</label><textarea id="rtC${n}" class="rt-ctxt" maxlength="2000" placeholder="O que mudar nesta linha?">${esc(rascLinha)}</textarea><div><button type="button" class="btn sm meio" data-lenviar="${n}">Comentar linha ${n}</button><button type="button" class="btn sm fantasma" data-lfechar>Cancelar</button></div></div>`:""}</li>`; };
+  const btnAprovar=!v8
+    ?`<button class="btn sm" type="button" disabled title="Falta rodar a migration_v8_roteiro.sql no Supabase. “Aprovar” do vídeo significaria aprovado para postar, por isso aqui fica desligado.">Aprovar roteiro <span class="selo fila">em breve</span></button>`
+    :ap&&!ap.mudou?`<button class="btn sm" type="button" id="rtAprovar" disabled>Roteiro aprovado ✓ <span class="selo voce">${esc(fmtData(ap.d.created_at))}</span></button>`
+    :`<button class="btn sm" type="button" id="rtAprovar"${doMac?"":` disabled title="Aprovar fica disponível quando o texto do roteiro chegar do Mac."`}>${ap?"Aprovar nova versão do roteiro":"Aprovar roteiro"}</button>`;
   const h=`${its.length>1?`<div class="chips rt-itens" role="group" aria-label="Episódio em roteiro">${its.map(v=>`<button type="button" data-rt="${esc(v.id)}" aria-pressed="${v.id===it.id}">${esc(v.episode||v.title)}</button>`).join("")}</div>`:""}
     <div class="rt-cab"><b>${esc(it.title||"Sem título ainda")}</b>${it.episode?`<span>${esc(it.episode)}</span>`:""}<span class="selo ${e==="roteiro"?"voce":"fila"}">${esc(ETIQ[e]||e)}</span>
+      ${ap?`<span class="selo ${ap.mudou?"fila":"voce"}">${ap.mudou?"roteiro mudou depois da aprovação":"roteiro aprovado"}</span>`:""}
       ${it.stage_note?`<p class="rt-nota">${esc(it.stage_note)}</p>`:""}</div>
     <div class="rt-cols">
       <div class="rt-col">
-        <header><span class="av ag" aria-hidden="true">R</span><b>Rascunho do roteirista</b><small>${it.produced_at?esc(fmtData(it.produced_at)):"agente"}</small></header>
-        ${linhas?`<ol class="rasc">${linhas.map(l=>`<li><span>${esc(l)}</span></li>`).join("")}</ol><p class="nota rt-fonte">Trecho “Roteiro” do NOTAS.md do episódio.</p>`
-          :`<p class="rt-sem">O texto completo do roteiro ainda não vem para o painel. Por enquanto só chega o título (a 1ª frase do roteiro.txt).</p>`}
-        <p class="rt-embreve"><span class="selo fila">em breve</span> Comentar linha a linha</p>
+        <header><span class="av ag" aria-hidden="true">R</span><b>${doMac?"Roteiro":"Rascunho do roteirista"}</b><small>${doMac&&it.roteiro_at?esc(fmtData(it.roteiro_at)):it.produced_at?esc(fmtData(it.produced_at)):"agente"}</small></header>
+        ${linhas?`<ol class="rasc${podeComentar?" comentavel":""}">${linhas.map(li).join("")}</ol><p class="nota rt-fonte">${fonte}</p>`:semTexto}
+        ${podeComentar?`<p class="rt-embreve">${ICON_COM} Toque no balão de uma linha pra comentar só ela.${coms.length?` · ${coms.length} comentário${coms.length>1?"s":""}`:""}</p>`
+          :v8?"":`<p class="rt-embreve"><span class="selo fila">em breve</span> Comentar linha a linha</p>`}
       </div>
       <div class="rt-col">
         <header><span class="av vc" aria-hidden="true">V</span><b>Suas ideias e ajustes</b><small>só você edita</small></header>
         <div class="ideias">
           <label class="sr" for="rtIdeia">Sua ideia para o roteirista</label>
-          <textarea id="rtIdeia" placeholder="Ex.: começa com o relógio na tela; mais tensão antes da virada">${esc(rascunho)}</textarea>
-          <p class="nota">Vira um <b>pedido de ajuste</b> de “${esc(it.title||it.episode||"este episódio")}”: o Hermes entrega o comentário aos agentes e o item volta para edição.</p>
-          ${ds.map(d=>`<div class="coment"><em>${d.decision==="ajuste"?"A":d.decision==="reprovado"?"R":"✓"}</em><div><small>você · ${esc(DEC[d.decision]||d.decision)} · ${esc(fmtData(d.created_at))}${d.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(d.comment)}</div></div>`).join("")}
+          <textarea id="rtIdeia" maxlength="2000" placeholder="Ex.: começa com o relógio na tela; mais tensão antes da virada">${esc(rascunho)}</textarea>
+          ${v8?`<p class="nota">Vai como <b>ideia pro Roteirista</b> de “${esc(it.title||it.episode||"este episódio")}”. O item continua no roteiro, não volta pra edição.</p>`
+            :`<p class="nota">Vira um <b>pedido de ajuste</b> de “${esc(it.title||it.episode||"este episódio")}”: o Hermes entrega o comentário aos agentes e o item volta para edição.</p>`}
+          ${ds.map(d=>`<div class="coment"><em>${d.decision==="ideia_roteiro"?"I":d.decision==="ajuste"?"A":d.decision==="reprovado"?"R":"✓"}</em><div><small>você · ${esc(DEC[d.decision]||d.decision)} · ${esc(fmtData(d.created_at))}${d.synced_at?" · ✓ entregue":" · aguardando o Mac"}</small>${esc(d.comment)}</div></div>`).join("")}
         </div>
       </div>
     </div>
     <div class="rt-acoes">
       <button class="btn meio sm" type="button" id="rtEnviar">Enviar ideia pro roteirista</button>
-      <button class="btn sm" type="button" disabled title="Em breve: aprovar roteiro ainda não existe no backend. “Aprovar” aqui significaria vídeo aprovado para postar.">Aprovar roteiro <span class="selo fila">em breve</span></button>
+      ${btnAprovar}
       <button class="btn fantasma sm" type="button" data-ir="novo" data-novo="nova">Escrever do zero</button>
       <p class="aviso" id="rtMsg" role="status"></p>
     </div>`;
   if(h===roteiroVisto) return; const novo=rtVistoId!==it.id; roteiroVisto=h; rtVistoId=it.id;
   box.innerHTML=h; if(animar||novo) stagger(box);
 }
+function erroV8(error){
+  const m=String(error?.message||"");
+  if(/check constraint|23514|hs3d_dec_decision_check|hs3d_script_comments|does not exist|schema cache/i.test(m+" "+(error?.code||"")))
+    return "O banco ainda não tem a parte nova do Roteiro (falta rodar a migration_v8_roteiro.sql).";
+  return m;
+}
 $("#roteiroBox").addEventListener("click",async e=>{
-  const c=e.target.closest("[data-rt]"); if(c){ rtSel[canal]=c.dataset.rt; renderRoteiro(true); return; }
-  const btn=e.target.closest("#rtEnviar"); if(!btn) return;
-  const it=videos.find(v=>v.id===rtSel[canal]), t=$("#rtIdeia"), msg=$("#rtMsg"), txt=t.value.trim();
-  msg.className="aviso";
+  const c=e.target.closest("[data-rt]"); if(c){ rtSel[canal]=c.dataset.rt; rtLinhaAberta=null; renderRoteiro(true); return; }
+  const it=videos.find(v=>v.id===rtSel[canal]), msg=$("#rtMsg");
   if(!it) return;
+  /* comentar linha */
+  const lc=e.target.closest(".rt-lc");
+  if(lc){ const n=+lc.dataset.ln, t0=$(".rt-ctxt"); if(t0&&rtLinhaAberta?.n!==n) t0.value=""; rtLinhaAberta=(rtLinhaAberta&&rtLinhaAberta.n===n&&rtLinhaAberta.id===it.id)?null:{id:it.id,n};
+    roteiroVisto=""; renderRoteiro(); const t=$(".rt-ctxt"); if(t) t.focus(); else $(`.rt-lc[data-ln="${n}"]`)?.focus(); return; }
+  if(e.target.closest("[data-lfechar]")){ const n=rtLinhaAberta?.n; const t=$(".rt-ctxt"); if(t) t.value=""; rtLinhaAberta=null; roteiroVisto=""; renderRoteiro(); $(`.rt-lc[data-ln="${n}"]`)?.focus(); return; }
+  const le=e.target.closest("[data-lenviar]");
+  if(le){
+    const n=+le.dataset.lenviar, t=$(".rt-ctxt"), txt=(t?.value||"").trim();
+    const ls=linhasRoteiro(it.roteiro_md)||[];
+    if(!txt){ msg.className="aviso erro"; msg.textContent="Escreva o comentário da linha antes de enviar."; t?.focus(); return; }
+    le.disabled=true; le.classList.add("carregando");
+    const {error}=await sb.from("hs3d_script_comments").insert({video_id:it.id,channel:it.channel,linha:n,trecho:(ls[n-1]||"").slice(0,500),comentario:txt.slice(0,2000)});
+    le.disabled=false; le.classList.remove("carregando");
+    if(error){ msg.className="aviso erro"; msg.textContent="Não consegui comentar: "+erroV8(error); return; }
+    t.value=""; rtLinhaAberta=null; t.blur(); toast(`Comentário da linha ${n} enviado. O Mac entrega ao Roteirista em até 2 min.`);
+    roteiroVisto=""; await carregarTudo(); return;
+  }
+  /* aprovar roteiro: só o texto, nunca o vídeo */
+  const ab=e.target.closest("#rtAprovar");
+  if(ab&&!ab.disabled){
+    if(!v8) return;
+    if(!confirm(`Aprovar o ROTEIRO de “${it.title||it.episode}”?\n\nIsso aprova só o texto pra seguir pra produção. Não aprova o vídeo e não libera postagem.`)) return;
+    ab.disabled=true; ab.classList.add("carregando");
+    const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:"roteiro_aprovado",comment:null});
+    ab.disabled=false; ab.classList.remove("carregando");
+    if(error){ msg.className="aviso erro"; msg.textContent="Não consegui aprovar: "+erroV8(error); return; }
+    pulso(ab); toast("Roteiro aprovado. O Mac avisa o Roteirista em até 2 min."); roteiroVisto=""; await carregarTudo(); return;
+  }
+  /* ideia pro roteirista */
+  const btn=e.target.closest("#rtEnviar"); if(!btn) return;
+  const t=$("#rtIdeia"), txt=t.value.trim();
+  msg.className="aviso";
   if(!txt){ msg.className="aviso erro"; msg.textContent="Escreva a ideia antes de enviar."; t.focus(); return; }
-  if(!confirm(`Enviar como pedido de ajuste de “${it.title||it.episode}”? O item volta para edição com o seu comentário.`)) return;
+  if(!v8&&!confirm(`Enviar como pedido de ajuste de “${it.title||it.episode}”? O item volta para edição com o seu comentário.`)) return;
   btn.disabled=true; btn.classList.add("carregando");
-  const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:"ajuste",comment:txt});
+  const {error}=await sb.from("hs3d_decisions").insert({video_id:it.id,channel:it.channel,decision:v8?"ideia_roteiro":"ajuste",comment:v8?txt.slice(0,2000):txt});
   btn.disabled=false; btn.classList.remove("carregando");
-  if(error){ msg.className="aviso erro"; msg.textContent="Não consegui enviar: "+error.message; return; }
-  t.value=""; pulso(btn); toast("Ideia enviada como pedido de ajuste. O Mac entrega aos agentes em até 2 min.");
-  await carregarTudo();
+  if(error){ msg.className="aviso erro"; msg.textContent="Não consegui enviar: "+(v8?erroV8(error):error.message); return; }
+  t.value=""; pulso(btn); toast(v8?"Ideia enviada pro Roteirista. O Mac entrega em até 2 min.":"Ideia enviada como pedido de ajuste. O Mac entrega aos agentes em até 2 min.");
+  roteiroVisto=""; await carregarTudo();
+});
+$("#roteiroBox").addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&e.target.classList?.contains("rt-ctxt")){ e.preventDefault(); $("[data-lfechar]")?.click(); }
+  if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)&&e.target.classList?.contains("rt-ctxt")){ e.preventDefault(); $("[data-lenviar]")?.click(); }
 });
 
 /* atualiza sozinho a cada 60 s enquanto aberto (sem atrapalhar quem está editando) */

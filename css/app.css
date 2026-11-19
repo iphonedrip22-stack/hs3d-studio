@@ -749,6 +749,21 @@ a.h{text-decoration:none;border-bottom:1px dotted var(--borda-forte);justify-sel
 .rasc li{counter-increment:l;display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;padding:2px 14px 2px 6px;overflow-wrap:anywhere}
 .rasc li::before{content:counter(l);text-align:right;color:var(--apagado);font-size:11px;padding-top:3px;font-variant-numeric:tabular-nums}
 .rt-fonte{padding:0 14px 8px}
+/* v8: comentar linha a linha */
+.rasc.comentavel li{grid-template-columns:28px minmax(0,1fr) auto;align-items:start;border-radius:6px;transition:background var(--d-fast)}
+.rasc.comentavel li:hover,.rasc li.aberta{background:rgba(240,169,58,.06)}
+.rasc li.tem-com>span{text-decoration:underline dotted var(--tung);text-underline-offset:3px}
+.rt-lc{display:inline-flex;align-items:center;gap:3px;min-width:32px;height:28px;padding:0 6px;border:1px solid transparent;border-radius:999px;background:none;color:var(--texto-mudo);cursor:pointer;opacity:.55;transition:opacity var(--d-fast),color var(--d-fast),border-color var(--d-fast)}
+.rt-lc b{font:700 11px/1 var(--txt)}
+.rasc li:hover .rt-lc,.rt-lc:focus-visible,.rasc li.tem-com .rt-lc,.rasc li.aberta .rt-lc{opacity:1;color:var(--tung)}
+.rt-lc:focus-visible{outline:0;border-color:var(--tung)}
+.rt-lcoms,.rt-lform{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin:4px 0 6px}
+.rt-lcoms p{margin:0;padding:6px 10px;border-left:2px solid var(--tung);background:rgba(23,15,18,.5);border-radius:0 6px 6px 0;font-size:13px;line-height:1.4}
+.rt-lcoms small{display:block;color:var(--texto-mudo);font-size:11px}
+.rt-lform textarea{width:100%;min-height:70px;padding:8px 10px;border-radius:var(--r-2);border:1px solid var(--borda-forte);background:var(--veludo);color:var(--luz);font-size:14px;line-height:1.45;resize:vertical}
+.rt-lform textarea:focus{border-color:var(--tung);box-shadow:0 0 0 3px rgba(240,169,58,.14);outline:0}
+.rt-lform div{display:flex;gap:6px;flex-wrap:wrap}
+.rt-embreve svg{flex:none}
 .rt-sem{flex:1;padding:var(--s-4) 14px;font-size:var(--t-md);color:var(--texto-mudo);border-bottom:1px dashed var(--borda)}
 .rt-embreve{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:12px;color:var(--texto-apagado)}
 .ideias{display:flex;flex-direction:column;gap:var(--s-2);padding:12px 14px;flex:1}
@@ -778,6 +793,8 @@ a.h{text-decoration:none;border-bottom:1px dotted var(--borda-forte);justify-sel
   .rt-cols{grid-template-columns:minmax(0,1fr)}
   .novo-canal{flex-wrap:wrap}.novo-canal .btn{margin-left:0;width:100%}
   .rt-acoes .btn{flex:1 1 100%}
+  .rt-lc{min-width:44px;height:44px;opacity:1}
+  .rt-lform .btn{flex:1 1 auto;min-height:44px}
 }
 @media(min-width:1100px){.home{grid-template-columns:minmax(0,1.12fr) minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){
