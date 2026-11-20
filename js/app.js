@@ -227,14 +227,20 @@ async function renderFila(){
   if(!its.length) return;
   if(!its.find(v=>v.id===selId[canal])) selId[canal]=(its.find(v=>v.status==="aguardando"&&v.preview_path)||its.find(v=>v.preview_path)||its[0]).id;
   const it=its.find(v=>v.id===selId[canal]);
-  const novaLista=$("#lista").dataset.k!==canal+its.length;
-  $("#lista").innerHTML=its.map(v=>{const e=etapa(v);
+  /* "Próximos na esteira": só o que está em avaliação ou em ajuste (etapas avaliador, aguardando, edicao —
+     edicao inclui ajuste/reprovado sendo refeito). Fora: roteiro, aprovado, agendado e postado. */
+  const ETAPAS_PROX=["avaliador","aguardando","edicao"];
+  const prox=its.filter(v=>v.status!=="aprovado"&&v.status!=="postado"&&ETAPAS_PROX.includes(etapa(v))) // status manda: aprovado/postado nunca entram, mesmo com etapa antiga
+    .sort((a,b)=>ETAPAS_PROX.indexOf(etapa(b))-ETAPAS_PROX.indexOf(etapa(a))||quando(b)-quando(a));
+  const chaveLista=canal+prox.map(v=>v.id+etapa(v)).join(), novaLista=$("#lista").dataset.k!==chaveLista;
+  $("#lista").innerHTML=prox.length?prox.map(v=>{const e=etapa(v);
     return `<li><button class="item" data-vid="${esc(v.id)}" aria-pressed="${v.id===it.id}">
     <span class="mini" data-poster="${esc(v.id)}"></span>
     <span class="t">${esc(v.title)}</span>
-    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${v.auto_aprovado?`<span class="lib" title="Formato liberado: passou sozinho depois do Avaliador">liberado</span>`:""}</span></button></li>`;}).join("");
-  $("#lista").dataset.k=canal+its.length; if(novaLista) stagger($("#lista"));
-  its.forEach(async v=>{const u=await urlPoster(v); const el=document.querySelector(`[data-poster="${CSS.escape(v.id)}"]`); if(u&&el) el.style.backgroundImage=`url("${u}")`;});
+    <span class="m">${esc(v.episode||"")} <span>${dur(v.duration_s)}</span> <span class="et ${e}">${esc(ETIQ[e]||e)}</span>${v.auto_aprovado?`<span class="lib" title="Formato liberado: passou sozinho depois do Avaliador">liberado</span>`:""}</span></button></li>`;}).join("")
+    :`<li class="nota">Nada em avaliação ou em ajuste em ${esc(CANAL[canal]||canal)} agora.</li>`;
+  $("#lista").dataset.k=chaveLista; if(novaLista) stagger($("#lista"));
+  prox.forEach(async v=>{const u=await urlPoster(v); const el=document.querySelector(`[data-poster="${CSS.escape(v.id)}"]`); if(u&&el) el.style.backgroundImage=`url("${u}")`;});
   $("#pTitulo").textContent=it.title; $("#pMeta").textContent=[it.episode,dur(it.duration_s)].filter(Boolean).join(", ");
   $("#dTitulo").textContent=it.title+(it.episode?", "+it.episode:"");
   if(it.preview_path&&etapa(it)==="edicao"&&it.status!=="reprovado"){ $("#dStatus").textContent="Em ajuste"; $("#dStatus").className="st aguardando"; }
